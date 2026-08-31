@@ -9,7 +9,7 @@
 import { COLOR_PROFILES, TUNING, profileById, randomHuntColor } from './colors.js';
 import { Detector } from './detector.js';
 import { Camera } from './camera.js';
-import { speak } from './speech.js';
+import { speak, primeSpeech } from './speech.js';
 import { saveCapture, allCaptures, getCapture, deleteCapture, exportLibraryJSON } from './storage.js';
 import { shareCapture, openBlobInNewTab } from './share.js';
 
@@ -109,6 +109,8 @@ function updateHuntUI() {
 async function runCountdown() {
   const token = ++countdownToken;
   detector.pause();
+  // あたらしい色になったら、まず英語で1回読み上げる（聞く → さがす）
+  speak(detector.activeProfile.speechText);
   const el = $('countdown');
   $('countdown-color').textContent = detector.activeProfile.displayName;
   el.classList.remove('hidden');
@@ -157,7 +159,9 @@ async function startCamera() {
 
 // ---------------------------------------------------------------- 遷移
 async function enterHuntWithNewColor() {
+  // ここはタップの直後（await より前）。iOS の音の制限をここで解いておく。
   primeAudio();
+  primeSpeech();
   detector.pickNextColor();
   showScreen('hunt');
   updateHuntUI();

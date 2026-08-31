@@ -5,6 +5,7 @@
 // このアプリでは児童が色の名前をタップしたときに呼ぶので条件を満たす。
 
 let cachedVoice = null;
+let primed = false;
 
 function pickVoice() {
   if (!('speechSynthesis' in window)) return null;
@@ -27,6 +28,23 @@ if ('speechSynthesis' in window) {
   window.speechSynthesis.addEventListener('voiceschanged', () => {
     cachedVoice = pickVoice();
   });
+}
+
+/**
+ * iOS Safari は「最初の読み上げ」をタップの中で呼ばないと鳴らない。
+ * START ボタンのクリック直後（await より前）にこれを呼んで解錠しておく。
+ * 音量0の空発話なので、児童には何も聞こえない。
+ */
+export function primeSpeech() {
+  if (primed || !('speechSynthesis' in window)) return;
+  primed = true;
+  try {
+    const u = new SpeechSynthesisUtterance(' ');
+    u.volume = 0;
+    window.speechSynthesis.speak(u);
+  } catch (e) {
+    // 解錠できなくても、色名をタップすれば鳴る
+  }
 }
 
 /** 例: speak('Red') */

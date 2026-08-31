@@ -280,6 +280,8 @@ struct HuntView: View {
 
     private func runCountdown() async {
         detector.pause()
+        // あたらしい色になったら、まず英語で1回読み上げる（聞く → さがす）
+        speech.speak(detector.activeProfile.speechText)
         for value in [3, 2, 1] {
             countdown = value
             Feedback.tap()
