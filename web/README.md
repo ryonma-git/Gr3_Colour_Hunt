@@ -16,7 +16,16 @@ Web 版なら、ロイロノートや Apple Classroom で **リンクを配る�
 
 ---
 
-## 1. 置き方
+## 公開ずみの URL
+
+**https://ryonma-git.github.io/Gr3_Colour_Hunt/**
+
+このリポジトリの `main` ブランチに push すると、1〜2分で自動的に更新されます。
+（リポジトリ直下の `index.html` が `web/` へ転送しているので、短い URL で開けます）
+
+---
+
+## 1. 置き方（別の場所に置きたいとき）
 
 `web/` の中身をそのまま静的サイトとして置くだけです。ビルドは不要です。
 
@@ -25,10 +34,11 @@ Web 版なら、ロイロノートや Apple Classroom で **リンクを配る�
 2. `web` フォルダをドラッグ&ドロップ
 3. 出てきた URL を児童に配る
 
-### GitHub Pages
+### GitHub Pages（このリポジトリで採用）
 1. リポジトリの Settings → Pages
-2. Source を `main` ブランチ / `/web` フォルダ（または `docs/` に置き換える）
-3. `https://<ユーザー名>.github.io/<リポジトリ名>/` が URL になる
+2. Source を `main` ブランチ / `/`（ルート）
+3. リポジトリ直下に `.nojekyll` と、`web/` へ転送する `index.html` を置く
+4. `https://<ユーザー名>.github.io/<リポジトリ名>/` が URL になる
 
 > **HTTPS が必須です。** カメラ（getUserMedia）は HTTPS か localhost でしか動きません。
 > Netlify も GitHub Pages も自動で HTTPS になるので、そのまま使えます。
