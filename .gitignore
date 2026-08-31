@@ -1,0 +1,20 @@
+# macOS
+.DS_Store
+
+# 配布用にその都度つくるもの
+*.swiftpm.zip
+
+# Xcode / SwiftPM
+.build/
+DerivedData/
+*.xcodeproj
+*.xcworkspace
+xcuserdata/
+
+# エディタ
+.vscode/
+.idea/
+
+# 作業中のスナップショット（Mac 上には残す。本番は ColorHunt.swiftpm）
+ColorHunt _defound.swiftpm/
+ColorHunt_7colours.swiftpm/

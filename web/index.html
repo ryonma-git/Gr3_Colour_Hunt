@@ -1,0 +1,137 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+<title>Color Hunt</title>
+<meta name="description" content="小学3年生の外国語活動のための いろさがしアプリ">
+<meta name="theme-color" content="#faf9f7">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Color Hunt">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+
+<!-- ===================== HOME ===================== -->
+<section id="screen-home" class="screen is-active screen-light">
+  <div class="home-top">
+    <h1 class="home-title">COLOR HUNT</h1>
+    <p class="home-tagline">What colour is it?</p>
+  </div>
+  <div class="home-buttons">
+    <button id="btn-start" class="btn btn-primary" type="button">START</button>
+    <button id="btn-home-gallery" class="btn btn-secondary" type="button">MY COLORS</button>
+  </div>
+  <div class="home-foot">
+    <p id="home-note" class="footnote"></p>
+  </div>
+</section>
+
+<!-- ===================== HUNT ===================== -->
+<section id="screen-hunt" class="screen screen-camera">
+  <video id="video" class="camera-video" playsinline muted autoplay></video>
+
+  <!-- まん中のターゲット（画面の中心＝映像の中心） -->
+  <div class="reticle" id="reticle">
+    <div class="reticle-badge" id="reticle-badge" aria-hidden="true">
+      <svg viewBox="0 0 24 24" width="46" height="46"><path fill="#fff" d="M9.3 17.3 4 12l1.6-1.6 3.7 3.7L18.4 5l1.6 1.6z"/></svg>
+    </div>
+    <div class="reticle-ring" id="reticle-ring"></div>
+    <div class="reticle-dot" id="reticle-dot"></div>
+    <div class="reticle-found" id="reticle-found">You found RED!</div>
+  </div>
+
+  <!-- 上下のUI -->
+  <div class="hunt-ui">
+    <div class="hunt-top">
+      <button id="btn-hunt-close" class="icon-button" type="button" aria-label="ホームに もどる">
+        <svg viewBox="0 0 24 24" width="22" height="22"><path fill="#fff" d="M18.3 5.7 12 12l6.3 6.3-1.4 1.4L10.6 13.4 4.3 19.7 2.9 18.3 9.2 12 2.9 5.7 4.3 4.3l6.3 6.3 6.3-6.3z"/></svg>
+      </button>
+      <button id="btn-hunt-gallery" class="pill-button" type="button">MY COLORS</button>
+    </div>
+
+    <button id="target-word" class="target-word" type="button" aria-label="いろの なまえ。タップすると えいごで よみます">
+      <span id="target-name">RED</span>
+      <svg viewBox="0 0 24 24" width="32" height="32" aria-hidden="true"><path fill="#fff" fill-opacity=".9" d="M3 9v6h4l5 5V4L7 9H3zm13.5 3a4.5 4.5 0 0 0-2.5-4v8a4.5 4.5 0 0 0 2.5-4zM14 2.2v2.1a7.7 7.7 0 0 1 0 15.4v2.1a9.8 9.8 0 0 0 0-19.6z"/></svg>
+    </button>
+
+    <div class="hunt-spacer"></div>
+
+    <p id="camera-message" class="camera-message hidden"></p>
+    <p id="status-line" class="status-line">まん中に あわせてね</p>
+    <button id="btn-shutter" class="shutter" type="button" aria-label="しゃしんを とる" disabled>
+      <span class="shutter-inner"></span>
+    </button>
+  </div>
+
+  <!-- 3 2 1 -->
+  <div id="countdown" class="countdown hidden">
+    <div id="countdown-color" class="countdown-color">RED</div>
+    <div id="countdown-number" class="countdown-number">3</div>
+  </div>
+
+  <!-- カメラが使えないとき -->
+  <div id="permission-panel" class="permission-panel hidden">
+    <p class="permission-title">カメラを つかうために<br>きょかが ひつようです</p>
+    <p class="permission-note" id="permission-note">
+      Safari の アドレスバー左の「ぁA」→「Webサイトの設定」→ カメラを「許可」にしてください。
+    </p>
+    <button id="btn-retry-camera" class="btn btn-primary" type="button">もういちど ためす</button>
+    <button id="btn-permission-home" class="btn btn-secondary" type="button">ホームに もどる</button>
+  </div>
+
+  <!-- 先生用のかくれた数値表示（左下すみを1.5秒長押し） -->
+  <div id="debug-toggle" class="debug-toggle"></div>
+  <div id="debug-panel" class="debug-panel hidden"></div>
+</section>
+
+<!-- ===================== 撮影後の確認 ===================== -->
+<section id="screen-preview" class="screen screen-dark">
+  <h2 id="preview-color" class="preview-color">RED</h2>
+  <div class="preview-image-wrap">
+    <img id="preview-image" class="preview-image" alt="">
+  </div>
+  <p id="preview-message" class="preview-message hidden"></p>
+  <div id="preview-actions" class="preview-actions">
+    <button id="btn-confirm" class="btn btn-primary" type="button">この しゃしんに する</button>
+    <button id="btn-retake" class="btn btn-secondary btn-on-dark" type="button">とりなおす</button>
+  </div>
+  <div id="saved-actions" class="preview-actions hidden">
+    <p class="saved-note">ほぞんしました</p>
+    <button id="btn-share" class="btn btn-primary btn-green" type="button">ロイロノートに おくる</button>
+    <button id="btn-next" class="btn btn-secondary btn-on-dark" type="button">つぎを さがす</button>
+  </div>
+</section>
+
+<!-- ===================== MY COLORS ===================== -->
+<section id="screen-gallery" class="screen screen-light">
+  <header class="sheet-header">
+    <span class="sheet-title">MY COLORS</span>
+    <button id="btn-gallery-close" class="text-button" type="button">とじる</button>
+  </header>
+  <div id="gallery-body" class="gallery-body"></div>
+  <footer class="gallery-footer">
+    <button id="btn-export" class="text-button subtle" type="button">データを かきだす（先生用）</button>
+  </footer>
+</section>
+
+<!-- ===================== 1枚を大きく ===================== -->
+<section id="screen-detail" class="screen screen-light">
+  <header class="sheet-header">
+    <button id="btn-detail-back" class="text-button" type="button">← もどる</button>
+    <span class="sheet-title" id="detail-color">RED</span>
+    <span class="sheet-spacer"></span>
+  </header>
+  <div class="detail-body">
+    <img id="detail-image" class="detail-image" alt="">
+    <p id="detail-date" class="detail-date"></p>
+    <button id="btn-detail-share" class="btn btn-primary btn-green" type="button">ロイロノートに おくる</button>
+    <button id="btn-detail-delete" class="text-button danger" type="button">けす</button>
+  </div>
+</section>
+
+<script type="module" src="js/app.js"></script>
+</body>
+</html>
