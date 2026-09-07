@@ -56,17 +56,20 @@ cat > "$PKG/HarnessApp.swift" <<'SWIFT'
 import SwiftUI
 import UIKit
 
-/// 検証専用の入口。起動引数 -harnessScreen で表示する画面を切りかえる。
-/// ColorHunt 本体の View / Service をそのまま使う。
-///
-/// 注意: ここは「本体の RootView の代わり」をする最小の器。
-/// 本番のナビゲーションそのものを確かめたいときは、本体アプリ（Color Hunt）を
-/// シミュレータで起動してください。カメラが無くても画面の行き来は全部動きます。
+// ============================================================================
+//  検証専用の入口。起動引数 -harnessScreen で表示する画面を切りかえる。
+//
+//  ★ 鉄則: コールバックに {} を書かないこと。
+//    空にすると「押しても何も起きないボタン」ができ、本体のバグと区別が
+//    つかなくなる。行き先が無い場合は必ず exit()（本体の RootView へ戻る）
+//    を渡すこと。ビルド前にスクリプト側でも空クロージャを検査している。
+// ============================================================================
+
 @main
 struct HarnessApp: App {
     @StateObject private var storage = StorageService()
     @StateObject private var camera = CameraService()
-    @StateObject private var detector = ColorDetectionService(profile: ColorProfile.red)
+    @StateObject private var detector = ColorDetectionService(profile: ColorProfile.randomHuntColor(excluding: nil))
     @StateObject private var speech = SpeechService()
     @StateObject private var teamHunt = TeamHuntService()
 
@@ -76,7 +79,7 @@ struct HarnessApp: App {
 
     var body: some Scene {
         WindowGroup {
-            content
+            HarnessContainer(screen: screen)
                 .environmentObject(storage)
                 .environmentObject(camera)
                 .environmentObject(detector)
@@ -87,50 +90,7 @@ struct HarnessApp: App {
         }
     }
 
-    @ViewBuilder
-    private var content: some View {
-        switch screen {
-        case "setup":
-            Theme.background
-                .ignoresSafeArea()
-                .sheet(isPresented: .constant(true)) {
-                    FolderSetupView(onClose: {})
-                        .preferredColorScheme(.light)
-                }
-        case "gallery":
-            Theme.background
-                .ignoresSafeArea()
-                .sheet(isPresented: .constant(true)) {
-                    GalleryView(onClose: {})
-                        .preferredColorScheme(.light)
-                }
-        case "teamselect":
-            TeamSelectView(onSelect: { _ in }, onBack: {})
-        case "teamready":
-            TeamReadyView(teamNumber: HarnessTeam.number,
-                          profile: TeamHuntConfiguration.profile(for: HarnessTeam.number) ?? ColorProfile.red,
-                          onStart: {},
-                          onBack: {})
-        case "teamhunt":
-            TeamHarnessHunt()
-        case "teamresult":
-            TeamHarnessResult(openViewer: false)
-        case "teamphoto":
-            TeamHarnessResult(openViewer: true)
-        case "hunt":
-            HarnessShell(start: .hunt, seedFound: false)
-        case "found":
-            HarnessShell(start: .hunt, seedFound: true)
-        case "preview":
-            HarnessShell(start: .preview, seedFound: true)
-        default:
-            // 本体の RootView をそのまま使う。スタブを挟まないので、
-            // SOLO / TEAM / MY COLORS の導線が本番と完全に同じになる。
-            RootView()
-        }
-    }
-
-    /// カメラが無い環境用の、赤いものを写したことにする合成写真
+    /// カメラが無い環境用の、見つけた物に見立てた合成写真
     static func makeSamplePhoto(hue: Double = 356, variant: Int = 0) -> CapturedPhoto {
         let size = CGSize(width: 1200, height: 1600)
         let renderer = UIGraphicsImageRenderer(size: size)
@@ -141,7 +101,6 @@ struct HarnessApp: App {
             UIColor(white: 0.55, alpha: 1).setFill()
             context.fill(CGRect(x: 0, y: 1300, width: size.width, height: 300))
             UIColor(red: rgb.r, green: rgb.g, blue: rgb.b, alpha: 1).setFill()
-            // 見つけた物に見えるよう、大きさと位置を少しずつ変える
             let w = 420.0 + Double(variant % 4) * 130
             let h = 320.0 + Double((variant + 1) % 3) * 150
             let x = 140.0 + Double(variant % 3) * 120
@@ -149,9 +108,8 @@ struct HarnessApp: App {
             if variant % 3 == 0 {
                 context.cgContext.fillEllipse(in: CGRect(x: x, y: y, width: w, height: h))
             } else {
-                let path = UIBezierPath(roundedRect: CGRect(x: x, y: y, width: w, height: h),
-                                        cornerRadius: 40)
-                path.fill()
+                UIBezierPath(roundedRect: CGRect(x: x, y: y, width: w, height: h),
+                             cornerRadius: 40).fill()
             }
         }
         let data = image.jpegData(compressionQuality: 0.85) ?? Data()
@@ -159,21 +117,197 @@ struct HarnessApp: App {
     }
 }
 
-/// -harnessTeam 4 のように班番号を渡せる（省略時は3）
+enum HarnessSample {
+    static let photo: CapturedPhoto = HarnessApp.makeSamplePhoto(hue: 356)
+}
+
+/// -harnessTeam 4 / -harnessPhotos 12 で班番号と枚数を変えられる
 enum HarnessTeam {
     static var number: Int {
         let n = UserDefaults.standard.integer(forKey: "harnessTeam")
         return (1...TeamHuntConfiguration.teamCount).contains(n) ? n : 3
     }
-    /// -harnessPhotos 12 のように枚数を指定できる（省略時は8）
     static var photoCount: Int {
         let n = UserDefaults.standard.integer(forKey: "harnessPhotos")
         return (1...40).contains(n) ? n : 8
     }
+    static var autoFinish: Bool { UserDefaults.standard.bool(forKey: "harnessAutoFinish") }
+    /// -harnessAutoExit YES で「もどる／ホーム」を3秒後に自動で押す（動作確認用）
+    static var autoExit: Bool { UserDefaults.standard.bool(forKey: "harnessAutoExit") }
+    static var release: Bool { UserDefaults.standard.bool(forKey: "harnessRelease") }
 }
 
-/// TEAM HUNT のさがす画面（班3=GREEN、5分の時計つき）
+// ---------------------------------------------------------------------------
+
+/// すべての単体画面の入れもの。
+/// どの画面の「戻る／閉じる／ホーム」も、行き先が無ければ本体の RootView へ戻す。
+/// これで空のコールバックを書く必要が無くなる。
+struct HarnessContainer: View {
+    let screen: String
+
+    @EnvironmentObject private var storage: StorageService
+    @EnvironmentObject private var detector: ColorDetectionService
+    @EnvironmentObject private var teamHunt: TeamHuntService
+
+    @State private var exited = false
+    @State private var selectedTeam: Int?
+    @State private var startedTeamHunt = false
+    @State private var showGallery = false
+
+    var body: some View {
+        if exited {
+            // 本体そのもの。ここから先は本番と完全に同じ導線。
+            RootView()
+        } else {
+            current
+                .sheet(isPresented: $showGallery) {
+                    GalleryView(onClose: { showGallery = false })
+                        .preferredColorScheme(.light)
+                }
+                .task {
+                    guard HarnessTeam.autoExit else { return }
+                    try? await Task.sleep(nanoseconds: 3_500_000_000)
+                    exit()
+                }
+        }
+    }
+
+    private func exit() { exited = true }
+
+    @ViewBuilder
+    private var current: some View {
+        switch screen {
+        case "setup":
+            Theme.background.ignoresSafeArea()
+                .sheet(isPresented: .constant(true)) {
+                    FolderSetupView(onClose: exit).preferredColorScheme(.light)
+                }
+        case "gallery":
+            GalleryView(onClose: exit)
+        case "hunt":
+            HarnessSoloHunt(seedFound: false, onExit: exit, onGallery: { showGallery = true })
+        case "found":
+            HarnessSoloHunt(seedFound: true, onExit: exit, onGallery: { showGallery = true })
+        case "preview":
+            HarnessCaptureFlow(onExit: exit, onGallery: { showGallery = true })
+        case "teamselect":
+            teamSelectFlow
+        case "teamready":
+            teamReadyFlow
+        case "teamhunt":
+            TeamHarnessHunt(onExit: exit, onGallery: { showGallery = true })
+        case "teamresult":
+            TeamHarnessResult(openViewer: false, onExit: exit)
+        case "teamphoto":
+            TeamHarnessResult(openViewer: true, onExit: exit)
+        default:
+            RootView()
+        }
+    }
+
+    /// 班をえらぶ → 確認画面へ（行き止まりを作らない）
+    @ViewBuilder
+    private var teamSelectFlow: some View {
+        if let team = selectedTeam, let profile = TeamHuntConfiguration.profile(for: team) {
+            TeamReadyView(teamNumber: team, profile: profile,
+                          onStart: exit,
+                          onBack: { selectedTeam = nil })
+        } else {
+            TeamSelectView(onSelect: { selectedTeam = $0 }, onBack: exit)
+        }
+    }
+
+    /// 確認画面 → START でさがす画面へ
+    @ViewBuilder
+    private var teamReadyFlow: some View {
+        if startedTeamHunt {
+            TeamHarnessHunt(onExit: exit, onGallery: { showGallery = true })
+        } else if let profile = TeamHuntConfiguration.profile(for: HarnessTeam.number) {
+            TeamReadyView(teamNumber: HarnessTeam.number, profile: profile,
+                          onStart: { startedTeamHunt = true },
+                          onBack: exit)
+        } else {
+            Color.clear.onAppear(perform: exit)
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+
+/// SOLO のさがす画面
+struct HarnessSoloHunt: View {
+    let seedFound: Bool
+    let onExit: () -> Void
+    let onGallery: () -> Void
+
+    @EnvironmentObject private var detector: ColorDetectionService
+
+    var body: some View {
+        HuntView(onClose: onExit, onOpenGallery: onGallery)
+            .task { await seed() }
+    }
+
+    private func seed() async {
+        guard seedFound else { return }
+        for _ in 0..<60 {
+            detector.ingest(HarnessSupport.sampleHSV(for: detector.activeProfile))
+            try? await Task.sleep(nanoseconds: 50_000_000)
+        }
+        guard HarnessTeam.release else { return }
+        for _ in 0..<120 {
+            detector.ingest(HSVColor(h: 0, s: 0.02, v: 0.95))
+            try? await Task.sleep(nanoseconds: 50_000_000)
+        }
+    }
+}
+
+/// 撮影確認 → とりなおす／つぎをさがす
+struct HarnessCaptureFlow: View {
+    let onExit: () -> Void
+    let onGallery: () -> Void
+
+    @EnvironmentObject private var detector: ColorDetectionService
+    @State private var isShowingPreview = true
+
+    var body: some View {
+        ZStack {
+            HuntView(onClose: onExit, onOpenGallery: onGallery)
+                .task {
+                    for _ in 0..<80 {
+                        detector.ingest(HarnessSupport.sampleHSV(for: detector.activeProfile))
+                        try? await Task.sleep(nanoseconds: 50_000_000)
+                    }
+                }
+            if isShowingPreview {
+                CapturePreviewView(photo: HarnessSample.photo,
+                                   onRetake: {
+                                       detector.resume()
+                                       isShowingPreview = false
+                                   },
+                                   onFinish: {
+                                       detector.pickNextColor()
+                                       detector.resume()
+                                       isShowingPreview = false
+                                   })
+                    .task { await autoFinishIfNeeded() }
+            }
+        }
+    }
+
+    private func autoFinishIfNeeded() async {
+        guard HarnessTeam.autoFinish else { return }
+        try? await Task.sleep(nanoseconds: 3_000_000_000)
+        detector.pickNextColor()
+        detector.resume()
+        isShowingPreview = false
+    }
+}
+
+/// TEAM のさがす画面（班の色・5分の時計つき）
 struct TeamHarnessHunt: View {
+    let onExit: () -> Void
+    let onGallery: () -> Void
+
     @EnvironmentObject private var detector: ColorDetectionService
     @EnvironmentObject private var teamHunt: TeamHuntService
     @State private var ready = false
@@ -181,35 +315,30 @@ struct TeamHarnessHunt: View {
     var body: some View {
         Group {
             if ready {
-                HuntView(onClose: {}, onOpenGallery: {}, onFinishTeamHunt: {})
+                HuntView(onClose: onExit, onOpenGallery: onGallery, onFinishTeamHunt: onExit)
             } else {
                 Color.black.ignoresSafeArea()
             }
         }
-            .task {
-                let team = HarnessTeam.number
-                guard let profile = TeamHuntConfiguration.profile(for: team) else { return }
-                teamHunt.start(teamNumber: team, profile: profile)
-                detector.activeProfile = profile
-                detector.reset()
-                ready = true
-                // 担当色ちょうどの色を流し込んで FOUND を再現する
-                let p = profile
-                let r = p.hueRanges[0]
-                let hsv = HSVColor(h: (r.from + r.to) / 2,
-                                   s: (p.saturationRange.lower + p.saturationRange.upper) / 2,
-                                   v: (p.brightnessRange.lower + p.brightnessRange.upper) / 2)
-                for _ in 0..<120 {
-                    detector.ingest(hsv)
-                    try? await Task.sleep(nanoseconds: 50_000_000)
-                }
+        .task {
+            let team = HarnessTeam.number
+            guard let profile = TeamHuntConfiguration.profile(for: team) else { return }
+            teamHunt.start(teamNumber: team, profile: profile)
+            detector.activeProfile = profile
+            detector.reset()
+            ready = true
+            for _ in 0..<120 {
+                detector.ingest(HarnessSupport.sampleHSV(for: profile))
+                try? await Task.sleep(nanoseconds: 50_000_000)
             }
+        }
     }
 }
 
-/// RESULT 画面（合成写真を実際に保存して、本番と同じ経路で表示する）
+/// RESULT / 写真の拡大表示（合成写真を実際に保存して本番と同じ経路で出す）
 struct TeamHarnessResult: View {
     let openViewer: Bool
+    let onExit: () -> Void
 
     @EnvironmentObject private var storage: StorageService
     @EnvironmentObject private var teamHunt: TeamHuntService
@@ -219,16 +348,15 @@ struct TeamHarnessResult: View {
         Group {
             if ready, let session = teamHunt.session, let profile = session.profile {
                 if openViewer {
-                    // 発表のときの「写真を大きく見る」状態をそのまま出す
                     TeamPhotoViewerView(captures: storage.captures(withIDs: session.captureIDs),
                                         profile: profile,
                                         startIndex: 2,
-                                        onClose: {})
+                                        onClose: onExit)
                 } else {
                     TeamResultView(teamNumber: session.teamNumber,
                                    profile: profile,
                                    captureIDs: session.captureIDs,
-                                   onHome: {})
+                                   onHome: onExit)
                 }
             } else {
                 Color.clear
@@ -238,19 +366,13 @@ struct TeamHarnessResult: View {
             let team = HarnessTeam.number
             guard !ready, let profile = TeamHuntConfiguration.profile(for: team) else { return }
             teamHunt.start(teamNumber: team, profile: profile)
-            // 担当色のまん中あたりの色相で写真をつくる
-            let firstRange = profile.hueRanges[0]
-            let baseHue = firstRange.from <= firstRange.to
-                ? (firstRange.from + firstRange.to) / 2
-                : firstRange.from
+            let first = profile.hueRanges[0]
+            let baseHue = first.from <= first.to ? (first.from + first.to) / 2 : first.from
             for i in 0..<HarnessTeam.photoCount {
-                let photo = HarnessApp.makeSamplePhoto(hue: baseHue + Double(i) * 6 - 15,
-                                                       variant: i)
-                if let c = storage.save(photo: photo,
-                                        profile: profile,
-                                        hsv: HSVColor(h: 120, s: 0.6, v: 0.5),
-                                        mode: .team,
-                                        teamNumber: team) {
+                let photo = HarnessApp.makeSamplePhoto(hue: baseHue + Double(i) * 6 - 15, variant: i)
+                if let c = storage.save(photo: photo, profile: profile,
+                                        hsv: HSVColor(h: baseHue, s: 0.6, v: 0.5),
+                                        mode: .team, teamNumber: team) {
                     teamHunt.record(c)
                 }
             }
@@ -260,119 +382,26 @@ struct TeamHarnessResult: View {
     }
 }
 
-/// 合成写真は1回だけ作る
-enum HarnessSample {
-    static let photo: CapturedPhoto = HarnessApp.makeSamplePhoto(hue: 356)
-}
-
-/// 本体 RootView と同じつなぎ方を最小限で再現した器。
-/// ボタンが「押しても何も起きない」状態を作らないためのもの。
-struct HarnessShell: View {
-    enum Start {
-        case home
-        case hunt
-        case preview
-    }
-
-    let seedFound: Bool
-
-    @EnvironmentObject private var detector: ColorDetectionService
-
-    @State private var isAtHome: Bool
-    @State private var isShowingPreview: Bool
-    @State private var showGallery = false
-    @State private var showSetup = false
-
-    init(start: Start, seedFound: Bool) {
-        self.seedFound = seedFound
-        _isAtHome = State(initialValue: start == .home)
-        _isShowingPreview = State(initialValue: start == .preview)
-    }
-
-    /// -harnessAutoFinish YES を付けると3秒後に「つぎをさがす」を自動で押す
-    private var autoFinish: Bool {
-        UserDefaults.standard.bool(forKey: "harnessAutoFinish")
-    }
-
-    var body: some View {
-        ZStack {
-            if isAtHome {
-                HomeView(onStartSolo: {
-                            detector.pickNextColor()
-                            isAtHome = false
-                         },
-                         onStartTeam: {},
-                         onOpenGallery: { showGallery = true },
-                         onOpenFolderSetup: { showSetup = true })
-            } else {
-                HuntView(onClose: { isAtHome = true },
-                         onOpenGallery: { showGallery = true })
-                    .task { await seedFoundState() }
-            }
-
-            if !isAtHome && isShowingPreview {
-                CapturePreviewView(photo: HarnessSample.photo,
-                                   onRetake: {
-                                       detector.resume()
-                                       isShowingPreview = false
-                                   },
-                                   onFinish: {
-                                       // 本体の finishCapture(): 色を変えて探し直す
-                                       detector.pickNextColor()
-                                       detector.resume()
-                                       isShowingPreview = false
-                                   })
-                    .task { await autoFinishIfNeeded() }
-            }
-        }
-        .sheet(isPresented: $showGallery) {
-            GalleryView(onClose: { showGallery = false })
-                .preferredColorScheme(.light)
-        }
-        .sheet(isPresented: $showSetup) {
-            FolderSetupView(onClose: { showSetup = false })
-                .preferredColorScheme(.light)
-        }
-    }
-
-    /// 「RED をみつけた状態」を作る。
-    /// -harnessRelease YES を付けると、そのあと赤以外を流し込んで
-    /// 「みつけた状態が解除されて、また探し始められる」ことを確かめられる。
-    private func seedFoundState() async {
-        guard seedFound else { return }
-        // いま出題されている色ちょうどの色を写しつづける → FOUND になる
-        for _ in 0..<60 {
-            detector.ingest(HarnessShell.sampleHSV(for: detector.activeProfile))
-            try? await Task.sleep(nanoseconds: 50_000_000)
-        }
-        guard UserDefaults.standard.bool(forKey: "harnessRelease") else { return }
-        // どの色にも当たらない白っぽいものに向けかえた → しばらくして FOUND が解ける
-        for _ in 0..<120 {
-            detector.ingest(HSVColor(h: 0, s: 0.02, v: 0.95))
-            try? await Task.sleep(nanoseconds: 50_000_000)
-        }
-    }
-
-    /// そのプロファイルのど真ん中にあたる色をつくる（どの色が出ても FOUND を再現できる）
+enum HarnessSupport {
+    /// そのプロファイルのど真ん中の色（どの色が出ても FOUND を再現できる）
     static func sampleHSV(for profile: ColorProfile) -> HSVColor {
         var hue: Double = 0
         if let first = profile.hueRanges.first {
             hue = first.from <= first.to ? (first.from + first.to) / 2 : first.from
         }
-        let s = (profile.saturationRange.lower + profile.saturationRange.upper) / 2
-        let v = (profile.brightnessRange.lower + profile.brightnessRange.upper) / 2
-        return HSVColor(h: hue, s: s, v: v)
-    }
-
-    private func autoFinishIfNeeded() async {
-        guard autoFinish else { return }
-        try? await Task.sleep(nanoseconds: 3_000_000_000)
-        detector.pickNextColor()
-        detector.resume()
-        isShowingPreview = false
+        return HSVColor(h: hue,
+                        s: (profile.saturationRange.lower + profile.saturationRange.upper) / 2,
+                        v: (profile.brightnessRange.lower + profile.brightnessRange.upper) / 2)
     }
 }
 SWIFT
+
+# ★ 空のコールバックが残っていないか検査する。
+#   ここで落としておかないと「押しても何も起きないボタン」が混ざる。
+if grep -nE 'on[A-Za-z]+: *\{ *\}|onSelect: *\{ *_ +in *\}' "$PKG/HarnessApp.swift"; then
+  echo "!! ハーネスに空のコールバックがあります（押しても反応しないボタンになります）"
+  exit 1
+fi
 
 echo "==> シミュレータを用意"
 UUID_RE='[0-9A-F]{8}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{12}'
@@ -407,6 +436,7 @@ case "${2:-}" in
   auto)    EXTRA=(-harnessAutoFinish YES) ;;
   release) EXTRA=(-harnessRelease YES) ;;
   team*)   EXTRA=(-harnessTeam "${2#team}" -harnessPhotos "${3:-8}") ;;
+  autoexit) EXTRA=(-harnessAutoExit YES) ;;
   *)       EXTRA=() ;;
 esac
 xcrun simctl launch "$UDID" "$BUNDLE" -harnessScreen "$SCREEN" "${EXTRA[@]}"
