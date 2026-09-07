@@ -122,7 +122,9 @@ struct HarnessApp: App {
         case "preview":
             HarnessShell(start: .preview, seedFound: true)
         default:
-            HarnessShell(start: .home, seedFound: false)
+            // 本体の RootView をそのまま使う。スタブを挟まないので、
+            // SOLO / TEAM / MY COLORS の導線が本番と完全に同じになる。
+            RootView()
         }
     }
 
