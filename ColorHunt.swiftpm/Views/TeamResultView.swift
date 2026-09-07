@@ -18,7 +18,9 @@ struct TeamResultView: View {
 
     @State private var viewerIndex: Int?
 
-    private let columns = [GridItem(.adaptive(minimum: 110), spacing: 10)]
+    /// 写真は大きめにする。発表のとき1枚ずつが見えることを優先し、
+    /// 入りきらないぶんはスクロールで見せる。
+    private let columns = [GridItem(.adaptive(minimum: 230), spacing: 14)]
 
     private var captures: [ColorCapture] {
         storage.captures(withIDs: captureIDs)
@@ -99,15 +101,16 @@ struct TeamResultView: View {
                     .foregroundColor(Theme.subtle)
                     .padding(.top, 40)
             } else {
-                LazyVGrid(columns: columns, spacing: 10) {
+                LazyVGrid(columns: columns, spacing: 14) {
                     ForEach(Array(captures.enumerated()), id: \.element.id) { pair in
                         Button {
                             viewerIndex = pair.offset
                         } label: {
                             Color.clear
                                 .aspectRatio(1, contentMode: .fit)
-                                .overlay(ThumbnailImage(url: storage.imageURL(for: pair.element)))
-                                .clipShape(RoundedRectangle(cornerRadius: 12))
+                                .overlay(ThumbnailImage(url: storage.imageURL(for: pair.element),
+                                                        maxPixel: 700))
+                                .clipShape(RoundedRectangle(cornerRadius: 16))
                         }
                         .buttonStyle(.plain)
                         .accessibilityLabel("\(pair.offset + 1)まいめの しゃしん")
@@ -115,6 +118,7 @@ struct TeamResultView: View {
                 }
                 .padding(.horizontal, 20)
                 .padding(.top, 14)
+                .padding(.bottom, 12)
             }
         }
     }
