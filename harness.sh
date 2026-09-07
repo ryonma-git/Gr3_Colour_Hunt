@@ -114,7 +114,9 @@ struct HarnessApp: App {
         case "teamhunt":
             TeamHarnessHunt()
         case "teamresult":
-            TeamHarnessResult()
+            TeamHarnessResult(openViewer: false)
+        case "teamphoto":
+            TeamHarnessResult(openViewer: true)
         case "hunt":
             HarnessShell(start: .hunt, seedFound: false)
         case "found":
@@ -129,17 +131,28 @@ struct HarnessApp: App {
     }
 
     /// カメラが無い環境用の、赤いものを写したことにする合成写真
-    static func makeSamplePhoto(hue: Double = 356) -> CapturedPhoto {
+    static func makeSamplePhoto(hue: Double = 356, variant: Int = 0) -> CapturedPhoto {
         let size = CGSize(width: 1200, height: 1600)
         let renderer = UIGraphicsImageRenderer(size: size)
         let rgb = RGBHSVConversion.rgb(HSVColor(h: hue, s: 0.75, v: 0.72))
         let image = renderer.image { context in
-            UIColor(white: 0.90, alpha: 1).setFill()
+            UIColor(white: 0.90 - Double(variant % 3) * 0.04, alpha: 1).setFill()
             context.fill(CGRect(origin: .zero, size: size))
-            UIColor(red: rgb.r, green: rgb.g, blue: rgb.b, alpha: 1).setFill()
-            context.cgContext.fillEllipse(in: CGRect(x: 250, y: 550, width: 700, height: 500))
             UIColor(white: 0.55, alpha: 1).setFill()
             context.fill(CGRect(x: 0, y: 1300, width: size.width, height: 300))
+            UIColor(red: rgb.r, green: rgb.g, blue: rgb.b, alpha: 1).setFill()
+            // 見つけた物に見えるよう、大きさと位置を少しずつ変える
+            let w = 420.0 + Double(variant % 4) * 130
+            let h = 320.0 + Double((variant + 1) % 3) * 150
+            let x = 140.0 + Double(variant % 3) * 120
+            let y = 420.0 + Double(variant % 2) * 200
+            if variant % 3 == 0 {
+                context.cgContext.fillEllipse(in: CGRect(x: x, y: y, width: w, height: h))
+            } else {
+                let path = UIBezierPath(roundedRect: CGRect(x: x, y: y, width: w, height: h),
+                                        cornerRadius: 40)
+                path.fill()
+            }
         }
         let data = image.jpegData(compressionQuality: 0.85) ?? Data()
         return CapturedPhoto(image: image, jpegData: data)
@@ -151,6 +164,11 @@ enum HarnessTeam {
     static var number: Int {
         let n = UserDefaults.standard.integer(forKey: "harnessTeam")
         return (1...TeamHuntConfiguration.teamCount).contains(n) ? n : 3
+    }
+    /// -harnessPhotos 12 のように枚数を指定できる（省略時は8）
+    static var photoCount: Int {
+        let n = UserDefaults.standard.integer(forKey: "harnessPhotos")
+        return (1...40).contains(n) ? n : 8
     }
 }
 
@@ -191,6 +209,8 @@ struct TeamHarnessHunt: View {
 
 /// RESULT 画面（合成写真を実際に保存して、本番と同じ経路で表示する）
 struct TeamHarnessResult: View {
+    let openViewer: Bool
+
     @EnvironmentObject private var storage: StorageService
     @EnvironmentObject private var teamHunt: TeamHuntService
     @State private var ready = false
@@ -198,10 +218,18 @@ struct TeamHarnessResult: View {
     var body: some View {
         Group {
             if ready, let session = teamHunt.session, let profile = session.profile {
-                TeamResultView(teamNumber: session.teamNumber,
-                               profile: profile,
-                               captureIDs: session.captureIDs,
-                               onHome: {})
+                if openViewer {
+                    // 発表のときの「写真を大きく見る」状態をそのまま出す
+                    TeamPhotoViewerView(captures: storage.captures(withIDs: session.captureIDs),
+                                        profile: profile,
+                                        startIndex: 2,
+                                        onClose: {})
+                } else {
+                    TeamResultView(teamNumber: session.teamNumber,
+                                   profile: profile,
+                                   captureIDs: session.captureIDs,
+                                   onHome: {})
+                }
             } else {
                 Color.clear
             }
@@ -210,8 +238,14 @@ struct TeamHarnessResult: View {
             let team = HarnessTeam.number
             guard !ready, let profile = TeamHuntConfiguration.profile(for: team) else { return }
             teamHunt.start(teamNumber: team, profile: profile)
-            for i in 0..<8 {
-                let photo = HarnessApp.makeSamplePhoto(hue: Double(i) * 12 + 90)
+            // 担当色のまん中あたりの色相で写真をつくる
+            let firstRange = profile.hueRanges[0]
+            let baseHue = firstRange.from <= firstRange.to
+                ? (firstRange.from + firstRange.to) / 2
+                : firstRange.from
+            for i in 0..<HarnessTeam.photoCount {
+                let photo = HarnessApp.makeSamplePhoto(hue: baseHue + Double(i) * 6 - 15,
+                                                       variant: i)
                 if let c = storage.save(photo: photo,
                                         profile: profile,
                                         hsv: HSVColor(h: 120, s: 0.6, v: 0.5),
@@ -372,7 +406,7 @@ xcrun simctl terminate "$UDID" "$BUNDLE" >/dev/null 2>&1
 case "${2:-}" in
   auto)    EXTRA=(-harnessAutoFinish YES) ;;
   release) EXTRA=(-harnessRelease YES) ;;
-  team*)   EXTRA=(-harnessTeam "${2#team}") ;;
+  team*)   EXTRA=(-harnessTeam "${2#team}" -harnessPhotos "${3:-8}") ;;
   *)       EXTRA=() ;;
 esac
 xcrun simctl launch "$UDID" "$BUNDLE" -harnessScreen "$SCREEN" "${EXTRA[@]}"
