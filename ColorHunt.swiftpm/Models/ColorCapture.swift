@@ -18,11 +18,27 @@ struct ColorCapture: Identifiable, Codable, Hashable {
     let colorProfileVersion: Int
     /// 判定が成立したときに実際に測った色
     let sampledHSV: HSVColor
+
+    // --- schemaVersion 2 で追加。古いデータには無いので optional にしてある。
+    //     （optional なので schemaVersion 1 の library.json もそのまま読める）
+
+    /// 活動の種類（HuntMode の rawValue: "solo" / "team"）。古いデータでは nil。
+    let mode: String?
+    /// TEAM HUNT のときの班番号。SOLO では nil。
+    let teamNumber: Int?
+}
+
+extension ColorCapture {
+    var huntMode: HuntMode {
+        HuntMode(rawValue: mode ?? "") ?? .solo
+    }
 }
 
 /// `library.json` そのもの。
 struct ColorHuntLibrary: Codable {
-    static let currentSchemaVersion = 1
+    /// 2 = mode / teamNumber を追加した版。
+    /// どちらも optional なので、schemaVersion 1 で書かれたファイルもそのまま読める。
+    static let currentSchemaVersion = 2
 
     var schemaVersion: Int
     var captures: [ColorCapture]

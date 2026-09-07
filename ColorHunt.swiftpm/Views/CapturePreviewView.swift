@@ -5,6 +5,7 @@ import SwiftUI
 struct CapturePreviewView: View {
     @EnvironmentObject private var storage: StorageService
     @EnvironmentObject private var detector: ColorDetectionService
+    @EnvironmentObject private var teamHunt: TeamHuntService
 
     let photo: CapturedPhoto
     let onRetake: () -> Void
@@ -75,19 +76,33 @@ struct CapturePreviewView: View {
 
     private var savedButtons: some View {
         VStack(spacing: 14) {
-            Label("ほぞんしました", systemImage: "checkmark.circle.fill")
-                .font(Theme.label(20))
-                .foregroundColor(Theme.success)
+            if teamHunt.isActive {
+                // TEAM HUNT は時間内に数をかせぐ活動なので、
+                // ここでは共有を出さずに「つぎ」へ進みやすくする。
+                // 共有は RESULT の写真から行う。
+                Label("Found \(teamHunt.foundCount)", systemImage: "checkmark.circle.fill")
+                    .font(Theme.display(28))
+                    .foregroundColor(Theme.success)
 
-            Button("ロイロノートに おくる") {
-                share()
-            }
-            .buttonStyle(PrimaryButtonStyle(fill: Theme.success))
+                Button(teamHunt.isTimeUp ? "けっかを みる" : "つぎを さがす") {
+                    onFinish()
+                }
+                .buttonStyle(PrimaryButtonStyle(fill: Theme.success))
+            } else {
+                Label("ほぞんしました", systemImage: "checkmark.circle.fill")
+                    .font(Theme.label(20))
+                    .foregroundColor(Theme.success)
 
-            Button("つぎを さがす") {
-                onFinish()
+                Button("ロイロノートに おくる") {
+                    share()
+                }
+                .buttonStyle(PrimaryButtonStyle(fill: Theme.success))
+
+                Button("つぎを さがす") {
+                    onFinish()
+                }
+                .buttonStyle(SecondaryButtonStyle(tint: .white))
             }
-            .buttonStyle(SecondaryButtonStyle(tint: .white))
         }
         .padding(.horizontal, 28)
     }

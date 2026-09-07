@@ -132,7 +132,11 @@ final class StorageService: ObservableObject {
     // MARK: - 保存 / 削除
 
     /// 「この写真にする」で呼ばれる。JPG と library.json の両方を更新する。
-    func save(photo: CapturedPhoto, profile: ColorProfile, hsv: HSVColor) -> ColorCapture? {
+    func save(photo: CapturedPhoto,
+              profile: ColorProfile,
+              hsv: HSVColor,
+              mode: HuntMode = .solo,
+              teamNumber: Int? = nil) -> ColorCapture? {
         let identifier = UUID().uuidString
         let fileName = identifier + ".jpg"
         let relativePath = StorageService.photosDirectoryName + "/" + fileName
@@ -156,7 +160,9 @@ final class StorageService: ObservableObject {
                                    capturedAt: Date(),
                                    difficulty: profile.difficulty.rawValue,
                                    colorProfileVersion: profile.profileVersion,
-                                   sampledHSV: hsv)
+                                   sampledHSV: hsv,
+                                   mode: mode.rawValue,
+                                   teamNumber: teamNumber)
 
         captures.insert(capture, at: 0)
         guard writeLibrary() else {
@@ -186,6 +192,12 @@ final class StorageService: ObservableObject {
 
     func captures(for profileID: String) -> [ColorCapture] {
         captures.filter { $0.targetColor == profileID }
+    }
+
+    /// 指定した id の写真を、渡された順番のまま取り出す（TEAM HUNT の RESULT 用）
+    func captures(withIDs ids: [String]) -> [ColorCapture] {
+        let byID = Dictionary(uniqueKeysWithValues: captures.map { ($0.id, $0) })
+        return ids.compactMap { byID[$0] }
     }
 
     var locationDescription: String {

@@ -26,26 +26,117 @@
 
 ---
 
+## TEAM HUNT（班で さがす）
+
+SOLO HUNT（ひとりでランダムな色をさがす）に加えて、**班ごとに担当色を決めて
+5分間さがす** モードがあります。ホーム画面で選びます。
+
+### 班と担当色（固定・ランダムではありません）
+
+| 班 | 色 | 班 | 色 |
+|---|---|---|---|
+| TEAM 1 | RED | TEAM 5 | ORANGE |
+| TEAM 2 | BLUE | TEAM 6 | PURPLE |
+| TEAM 3 | GREEN | TEAM 7 | PINK |
+| TEAM 4 | YELLOW | TEAM 8 | BROWN |
+
+**同じ班番号なら、どの iPad でも必ず同じ色**になります。授業中に色は変わりません。
+対応表は `Models/TeamHunt.swift` の `TeamHuntConfiguration.setA` の1箇所だけにあります。
+
+### 流れ
+
+```
+TEAM HUNT → 班番号(1〜8)をえらぶ → TEAM 3 / GREEN を確認（色名タップで読み上げ）
+ → START → 3・2・1 → 5:00 のカウントダウン開始
+ → GREEN のものをさがす → FOUND → シャッター → この しゃしんに する（Found +1）
+ → くりかえし → TIME'S UP! または FINISH → RESULT
+```
+
+- **5分**（`TeamHuntConfiguration.duration`）。時間はUIからは変えられません
+- 途中でやめるときは画面左上の **FINISH**（確認ダイアログが出ます）
+- **Found count は「この しゃしんに する」で正式保存された枚数だけ**増えます。
+  FOUND しただけ、とりなおしただけでは増えません
+
+### RESULT 画面と Apple Classroom
+
+RESULT は **教師が代表 iPad を Apple Classroom でミラーリングし、教室前方の
+大画面に映すこと** を前提にしています。
+
+```
+      TEAM 3
+    ■ GREEN
+        8
+      FOUND
+   [しゃしんのグリッド]
+```
+
+- 見つけた数がいちばん大きく、次に色、次に班番号
+- 写真をタップすると大きく表示され、**左右スワイプで前後に移動**できます
+- 撮影時刻や HSV などの細かい数値は出しません
+
+### アプリは採点しません
+
+表示するのは **FOUND COUNT（撮った枚数）だけ** です。
+
+- 同じものを2回撮ったかどうかは判定しません（画像認識は使いません）
+- 得点・順位・勝敗は出しません
+
+重複や色の境目、探した対象が妥当かは、**RESULT を見ながら教師が判断し、黒板に
+得点を書きます**。アプリは材料を集めて見せるところまでで、会話と評価は教室で行う、
+という責務分けです。
+
+### 授業での使い方（例）
+
+1. 班ごとに代表 iPad を1台。教師が「1班は TEAM 1 を押します」と伝える
+2. 各班 5分間、担当色のものを校内・教室内でさがして撮る
+3. 5分たつと TIME'S UP! → RESULT
+4. 教師が代表端末を Apple Classroom でミラーリング
+5. クラス全体で写真を見ながら "What is it?" "How many?" などを英語で話す
+6. 教師が重複などを判断して黒板に得点を書く
+
+### BROWN について
+
+TEAM 8 の BROWN は「暗い・くすんだ ORANGE」なので、色相だけでは分けられません。
+ORANGE を S 0.65以上に限り、BROWN を S 0.38〜0.64・V 0.18〜0.82 とすることで
+分離しています（木の机・床・段ボール・茶色い筆箱が通ることを確認済み）。
+
+> **注意**: 茶色は肌の色と HSV 上で重なります。明るい手のひらは S の下限ではじけますが、
+> **暗めの肌は BROWN と判定されます**。HSV では原理的に分離できません。
+> 活動前に「人ではなく“もの”をさがそう」と一言添えるのが現実的な対処です。
+> きびしくするなら `ColorProfile.brown` の `saturationRange` の下限を 0.45 に上げます
+> （そのぶん段ボールなど薄い茶色が通らなくなります）。
+
+BROWN は SOLO HUNT のランダム出題（`huntColors`）には入れていません。
+TEAM 8 でのみ使います。
+
+---
+
 ## 1. ファイル構成
 
 ```
 ColorHunt.swiftpm/
 ├── Package.swift               App Playground の設定（カメラ権限もここ）
 ├── README.md                   このファイル
-├── ColorHuntApp.swift          アプリの入口。activeProfile に RED を入れている
+├── ColorHuntApp.swift          アプリの入口。4つのサービスを注入する
 ├── Models/
 │   ├── ColorProfile.swift      ★ 色の定義と判定のチューニング（ここだけ直せばよい）
+│   ├── TeamHunt.swift          ★ 班と担当色の対応表・5分・セッション
 │   ├── ColorCapture.swift      library.json の中身
 │   └── HSVColor.swift          H/S/V の入れもの
 ├── Services/
 │   ├── CameraService.swift     カメラ起動・中央7x7の平均色・写真撮影
 │   ├── ColorDetectionService.swift  0.5秒つづけて一致したら FOUND
+│   ├── TeamHuntService.swift   班・残り時間・みつけた数
 │   ├── SpeechService.swift     英語の読み上げ（オフラインでも動く）
 │   ├── StorageService.swift    フォルダ選択・JPG保存・library.json
 │   └── ShareService.swift      共有シート（ロイロノート）と発表用画像
 ├── Views/
 │   ├── RootView.swift          画面の行き来
-│   ├── HomeView.swift          COLOR HUNT / START / MY COLORS
+│   ├── HomeView.swift          SOLO HUNT / TEAM HUNT / MY COLORS
+│   ├── TeamSelectView.swift    班番号 1〜8
+│   ├── TeamReadyView.swift     TEAM n / 担当色 / START
+│   ├── TeamResultView.swift    大画面むけの結果画面
+│   ├── TeamPhotoViewerView.swift  結果の写真を大きく見る
 │   ├── HuntView.swift          カメラ・RED表示・ターゲット・シャッター
 │   ├── CapturePreviewView.swift  とりなおす / この しゃしんに する
 │   ├── GalleryView.swift       MY COLORS 一覧
@@ -186,6 +277,7 @@ static var style: Style = .presentationCard   // ← .photoOnly に変える
 | 色 | Hue | S | V | ねらい |
 |---|---|---|---|---|
 | RED | 345–360, 0–14 | 0.45+ | 0.20+ | S を高めにして肌とピンクを除く |
+| BROWN | 15–45 | 0.38–**0.64** | 0.18–0.82 | ORANGE と色相が同じなので S で分ける（TEAM 8 用） |
 | ORANGE | 16–44 | **0.65+** | 0.50+ | S を高めにして木の机・肌を除く |
 | YELLOW | 45–70 | 0.40+ | 0.55+ | V を高めにしてオリーブ色を除く |
 | GREEN | 75–165 | 0.25+ | 0.15+ | 濃い緑の黒板も通す |
@@ -281,6 +373,8 @@ Gallery は `catalog` の順に色ごとの節を作るので、追加すれば�
   "captures" : [
     {
       "id" : "9C1F5F2E-....",
+      "mode" : "team",
+      "teamNumber" : 3,
       "targetColor" : "red",
       "displayName" : "RED",
       "imageFile" : "photos/9C1F5F2E-....jpg",
@@ -293,6 +387,8 @@ Gallery は `catalog` の順に色ごとの節を作るので、追加すれば�
 }
 ```
 
+- `schemaVersion` は 2。`mode`（"solo" / "team"）と `teamNumber` は **optional** なので、
+  **schemaVersion 1 で書かれた古いファイルもそのまま読めます**（SOLO の写真は消えません）
 - `imageFile` は `library.json` から見た相対パスです
 - 日付は ISO8601
 - `sampledHSV` は「FOUND になった瞬間に測れていた色」です

@@ -95,6 +95,15 @@ struct ColorProfile: Identifiable, Codable, Hashable {
     var displayColor: Color {
         Color(red: tint.r, green: tint.g, blue: tint.b)
     }
+
+    /// 白い背景に文字として置いても読める色。
+    /// YELLOW のように明るい色は暗くして使う（色だけに頼らないための下地）。
+    var readableColor: Color {
+        let hsv = RGBHSVConversion.hsv(r: tint.r, g: tint.g, b: tint.b)
+        guard hsv.v > 0.72 && hsv.s > 0.20 else { return displayColor }
+        let darker = RGBHSVConversion.rgb(HSVColor(h: hsv.h, s: min(1, hsv.s * 1.05), v: 0.60))
+        return Color(red: darker.r, green: darker.g, blue: darker.b)
+    }
 }
 
 // MARK: - 色のカタログ
@@ -204,15 +213,46 @@ extension ColorProfile {
         tint: RGBTriple(r: 0.95, g: 0.45, b: 0.65)
     )
 
+    /// TEAM HUNT の8班目で使う色。
+    ///
+    /// BROWN は「暗い / くすんだ ORANGE」なので、色相だけでは分けられない。
+    /// ORANGE を S 0.65以上に限っているのに対し、BROWN は S 0.64以下・V 0.78以下
+    /// という「鮮やかすぎない・明るすぎない」条件で分離している。
+    /// 木の机・床・段ボール・茶色い筆箱が通ることを優先した。
+    ///
+    /// ※ 注意: 茶色は肌の色と HSV 上でどうしても重なる。
+    ///   明るい手のひら（S 0.30 前後）は S の下限 0.38 ではじけるが、
+    ///   暗めの肌は BROWN の範囲に入る。HSV では原理的に分離できない。
+    ///   授業前に「人ではなく物をさがす」と一言添えるのが現実的な対処。
+    ///   きびしくしたい場合は saturationRange の下限を 0.45 に上げる
+    ///   （そのぶん段ボールなど薄い茶色が通らなくなる）。
+    static let brown = ColorProfile(
+        id: "brown",
+        displayName: "BROWN",
+        speechText: "Brown",
+        hueRanges: [HueRange(15, 45)],
+        saturationRange: ValueRange(0.38, 0.64),  // 0.65 以上は ORANGE / 0.38 未満は肌
+        brightnessRange: ValueRange(0.18, 0.82),  // 明るすぎるものは ORANGE / 肌
+        difficulty: .advanced,
+        profileVersion: 1,
+        tint: RGBTriple(r: 0.51, g: 0.36, b: 0.21)
+    )
+
     /// アプリが知っている色すべて。Gallery の並び順にも使う。
     static let catalog: [ColorProfile] = [
-        .red, .orange, .yellow, .green, .blue, .purple, .pink
+        .red, .orange, .yellow, .green, .blue, .purple, .pink, .brown
     ]
 
-    /// ★ 授業で出題する色。ここを減らせば、その色だけが出る。
+    /// ★ SOLO HUNT でランダム出題する色。ここを減らせば、その色だけが出る。
     ///   例: 最初の授業は3色だけにする
     ///       static let huntColors: [ColorProfile] = [.red, .blue, .yellow]
-    static let huntColors: [ColorProfile] = catalog
+    ///
+    ///   BROWN は入れていない。TEAM HUNT の8班目でだけ使う色で、
+    ///   ひとりで探すには難しく、肌の色とも重なりやすいため。
+    ///   SOLO でも出したいときは末尾に .brown を足す。
+    static let huntColors: [ColorProfile] = [
+        .red, .orange, .yellow, .green, .blue, .purple, .pink
+    ]
 
     /// 次に出す色をランダムに選ぶ。直前と同じ色は選ばない。
     static func randomHuntColor(excluding current: ColorProfile?) -> ColorProfile {

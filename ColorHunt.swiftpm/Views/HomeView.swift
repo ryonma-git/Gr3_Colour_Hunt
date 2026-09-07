@@ -4,7 +4,8 @@ import SwiftUI
 struct HomeView: View {
     @EnvironmentObject private var storage: StorageService
 
-    let onStart: () -> Void
+    let onStartSolo: () -> Void
+    let onStartTeam: () -> Void
     let onOpenGallery: () -> Void
     let onOpenFolderSetup: () -> Void
 
@@ -31,13 +32,32 @@ struct HomeView: View {
 
                 Spacer()
 
-                VStack(spacing: 20) {
-                    Button("START") {
+                VStack(spacing: 18) {
+                    // ひとりで さがす（これまでの START と同じ）
+                    Button {
                         Feedback.tap()
-                        onStart()
+                        onStartSolo()
+                    } label: {
+                        modeLabel(title: "SOLO HUNT",
+                                  subtitle: "ひとりで さがす",
+                                  icon: "person.fill")
                     }
                     .buttonStyle(PrimaryButtonStyle())
-                    .accessibilityHint("いろさがしを はじめます")
+                    .accessibilityLabel("ソロハント")
+                    .accessibilityHint("ひとりで いろさがしを はじめます")
+
+                    // はんで さがす
+                    Button {
+                        Feedback.tap()
+                        onStartTeam()
+                    } label: {
+                        modeLabel(title: "TEAM HUNT",
+                                  subtitle: "はんで さがす・5ふん",
+                                  icon: "person.3.fill")
+                    }
+                    .buttonStyle(PrimaryButtonStyle(fill: Theme.ink))
+                    .accessibilityLabel("チームハント")
+                    .accessibilityHint("はんで 5ふんかん いろさがしを します")
 
                     Button("MY COLORS") {
                         onOpenGallery()
@@ -53,6 +73,20 @@ struct HomeView: View {
                     .padding(.bottom, 8)
             }
             .padding(.vertical, 20)
+        }
+    }
+
+    /// アイコンだけに頼らず、英語の名前と短い日本語をならべる
+    private func modeLabel(title: String, subtitle: String, icon: String) -> some View {
+        HStack(spacing: 14) {
+            Image(systemName: icon)
+                .font(.system(size: 26, weight: .bold))
+            VStack(alignment: .leading, spacing: 0) {
+                Text(title)
+                Text(subtitle)
+                    .font(Theme.label(15))
+                    .opacity(0.85)
+            }
         }
     }
 

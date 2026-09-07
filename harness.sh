@@ -68,6 +68,7 @@ struct HarnessApp: App {
     @StateObject private var camera = CameraService()
     @StateObject private var detector = ColorDetectionService(profile: ColorProfile.red)
     @StateObject private var speech = SpeechService()
+    @StateObject private var teamHunt = TeamHuntService()
 
     private var screen: String {
         UserDefaults.standard.string(forKey: "harnessScreen") ?? "home"
@@ -80,6 +81,7 @@ struct HarnessApp: App {
                 .environmentObject(camera)
                 .environmentObject(detector)
                 .environmentObject(speech)
+                .environmentObject(teamHunt)
                 .preferredColorScheme(.light)
                 .onAppear { storage.bootstrap() }
         }
@@ -102,6 +104,17 @@ struct HarnessApp: App {
                     GalleryView(onClose: {})
                         .preferredColorScheme(.light)
                 }
+        case "teamselect":
+            TeamSelectView(onSelect: { _ in }, onBack: {})
+        case "teamready":
+            TeamReadyView(teamNumber: HarnessTeam.number,
+                          profile: TeamHuntConfiguration.profile(for: HarnessTeam.number) ?? ColorProfile.red,
+                          onStart: {},
+                          onBack: {})
+        case "teamhunt":
+            TeamHarnessHunt()
+        case "teamresult":
+            TeamHarnessResult()
         case "hunt":
             HarnessShell(start: .hunt, seedFound: false)
         case "found":
@@ -114,13 +127,14 @@ struct HarnessApp: App {
     }
 
     /// カメラが無い環境用の、赤いものを写したことにする合成写真
-    static func makeSamplePhoto() -> CapturedPhoto {
+    static func makeSamplePhoto(hue: Double = 356) -> CapturedPhoto {
         let size = CGSize(width: 1200, height: 1600)
         let renderer = UIGraphicsImageRenderer(size: size)
+        let rgb = RGBHSVConversion.rgb(HSVColor(h: hue, s: 0.75, v: 0.72))
         let image = renderer.image { context in
             UIColor(white: 0.90, alpha: 1).setFill()
             context.fill(CGRect(origin: .zero, size: size))
-            UIColor(red: 0.82, green: 0.13, blue: 0.15, alpha: 1).setFill()
+            UIColor(red: rgb.r, green: rgb.g, blue: rgb.b, alpha: 1).setFill()
             context.cgContext.fillEllipse(in: CGRect(x: 250, y: 550, width: 700, height: 500))
             UIColor(white: 0.55, alpha: 1).setFill()
             context.fill(CGRect(x: 0, y: 1300, width: size.width, height: 300))
@@ -130,9 +144,89 @@ struct HarnessApp: App {
     }
 }
 
+/// -harnessTeam 4 のように班番号を渡せる（省略時は3）
+enum HarnessTeam {
+    static var number: Int {
+        let n = UserDefaults.standard.integer(forKey: "harnessTeam")
+        return (1...TeamHuntConfiguration.teamCount).contains(n) ? n : 3
+    }
+}
+
+/// TEAM HUNT のさがす画面（班3=GREEN、5分の時計つき）
+struct TeamHarnessHunt: View {
+    @EnvironmentObject private var detector: ColorDetectionService
+    @EnvironmentObject private var teamHunt: TeamHuntService
+    @State private var ready = false
+
+    var body: some View {
+        Group {
+            if ready {
+                HuntView(onClose: {}, onOpenGallery: {}, onFinishTeamHunt: {})
+            } else {
+                Color.black.ignoresSafeArea()
+            }
+        }
+            .task {
+                let team = HarnessTeam.number
+                guard let profile = TeamHuntConfiguration.profile(for: team) else { return }
+                teamHunt.start(teamNumber: team, profile: profile)
+                detector.activeProfile = profile
+                detector.reset()
+                ready = true
+                // 担当色ちょうどの色を流し込んで FOUND を再現する
+                let p = profile
+                let r = p.hueRanges[0]
+                let hsv = HSVColor(h: (r.from + r.to) / 2,
+                                   s: (p.saturationRange.lower + p.saturationRange.upper) / 2,
+                                   v: (p.brightnessRange.lower + p.brightnessRange.upper) / 2)
+                for _ in 0..<120 {
+                    detector.ingest(hsv)
+                    try? await Task.sleep(nanoseconds: 50_000_000)
+                }
+            }
+    }
+}
+
+/// RESULT 画面（合成写真を実際に保存して、本番と同じ経路で表示する）
+struct TeamHarnessResult: View {
+    @EnvironmentObject private var storage: StorageService
+    @EnvironmentObject private var teamHunt: TeamHuntService
+    @State private var ready = false
+
+    var body: some View {
+        Group {
+            if ready, let session = teamHunt.session, let profile = session.profile {
+                TeamResultView(teamNumber: session.teamNumber,
+                               profile: profile,
+                               captureIDs: session.captureIDs,
+                               onHome: {})
+            } else {
+                Color.clear
+            }
+        }
+        .task {
+            let team = HarnessTeam.number
+            guard !ready, let profile = TeamHuntConfiguration.profile(for: team) else { return }
+            teamHunt.start(teamNumber: team, profile: profile)
+            for i in 0..<8 {
+                let photo = HarnessApp.makeSamplePhoto(hue: Double(i) * 12 + 90)
+                if let c = storage.save(photo: photo,
+                                        profile: profile,
+                                        hsv: HSVColor(h: 120, s: 0.6, v: 0.5),
+                                        mode: .team,
+                                        teamNumber: team) {
+                    teamHunt.record(c)
+                }
+            }
+            teamHunt.finish()
+            ready = true
+        }
+    }
+}
+
 /// 合成写真は1回だけ作る
 enum HarnessSample {
-    static let photo: CapturedPhoto = HarnessApp.makeSamplePhoto()
+    static let photo: CapturedPhoto = HarnessApp.makeSamplePhoto(hue: 356)
 }
 
 /// 本体 RootView と同じつなぎ方を最小限で再現した器。
@@ -167,10 +261,11 @@ struct HarnessShell: View {
     var body: some View {
         ZStack {
             if isAtHome {
-                HomeView(onStart: {
+                HomeView(onStartSolo: {
                             detector.pickNextColor()
                             isAtHome = false
                          },
+                         onStartTeam: {},
                          onOpenGallery: { showGallery = true },
                          onOpenFolderSetup: { showSetup = true })
             } else {
@@ -275,6 +370,7 @@ xcrun simctl terminate "$UDID" "$BUNDLE" >/dev/null 2>&1
 case "${2:-}" in
   auto)    EXTRA=(-harnessAutoFinish YES) ;;
   release) EXTRA=(-harnessRelease YES) ;;
+  team*)   EXTRA=(-harnessTeam "${2#team}") ;;
   *)       EXTRA=() ;;
 esac
 xcrun simctl launch "$UDID" "$BUNDLE" -harnessScreen "$SCREEN" "${EXTRA[@]}"
