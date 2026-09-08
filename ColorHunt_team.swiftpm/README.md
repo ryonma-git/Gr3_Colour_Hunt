@@ -114,7 +114,7 @@ TEAM 8 でのみ使います。
 ## 1. ファイル構成
 
 ```
-ColorHunt.swiftpm/
+ColorHunt_team.swiftpm/
 ├── Package.swift               App Playground の設定（カメラ権限もここ）
 ├── README.md                   このファイル
 ├── ColorHuntApp.swift          アプリの入口。4つのサービスを注入する
@@ -157,12 +157,12 @@ ColorHunt.swiftpm/
 
 ## 2. Swift Playgrounds での開き方（iPad）
 
-1. `ColorHunt.swiftpm` を iPad に渡す（次項）
+1. `ColorHunt_team.swiftpm` を iPad に渡す（次項）
 2. 受け取ると Swift Playgrounds が開くか、「Swift Playgroundsで開く」を選ぶ
 3. 「マイSwift Playgrounds」に **Color Hunt** が入る
 4. 右上の ▶︎（実行）で起動
 
-Mac の Xcode でも同じフォルダをそのまま開けます（`ColorHunt.swiftpm` をダブルクリック）。
+Mac の Xcode でも同じフォルダをそのまま開けます（`ColorHunt_team.swiftpm` をダブルクリック）。
 
 ### 動作条件
 - iPadOS 16 以上（`Package.swift` の `platforms: [.iOS("16.0")]`）
@@ -176,9 +176,9 @@ Mac の Xcode でも同じフォルダをそのまま開けます（`ColorHunt.s
 いずれか1つでよいです。
 
 - **AirDrop**（いちばん確実）
-  Finder で `ColorHunt.swiftpm` を右クリック →「共有」→「AirDrop」→ 対象の iPad
+  Finder で `ColorHunt_team.swiftpm` を右クリック →「共有」→「AirDrop」→ 対象の iPad
 - **iCloud Drive / ファイル**
-  `ColorHunt.swiftpm` を iCloud Drive に置き、iPad の「ファイル」からタップ
+  `ColorHunt_team.swiftpm` を iCloud Drive に置き、iPad の「ファイル」からタップ
 - **Apple Classroom / MDM で配布**
   フォルダのまま zip 化せずに配れない場合は zip 化して配布し、
   iPad 側で展開してから `.swiftpm` をタップします

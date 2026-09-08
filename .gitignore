@@ -15,6 +15,5 @@ xcuserdata/
 .vscode/
 .idea/
 
-# 作業中のスナップショット（Mac 上には残す。本番は ColorHunt.swiftpm）
-ColorHunt _defound.swiftpm/
-ColorHunt_7colours.swiftpm/
+# 作業中のスナップショット（Mac 上には残す。本番は ColorHunt_team.swiftpm）
+_old_versions/

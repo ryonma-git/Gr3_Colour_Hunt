@@ -2,9 +2,9 @@
 # ------------------------------------------------------------------
 # Color Hunt 検証用ハーネス
 #
-# ColorHunt.swiftpm の「いまのソース」をそのままコピーして、
+# ColorHunt_team.swiftpm の「いまのソース」をそのままコピーして、
 # カメラの無い iOS シミュレータでも1画面ずつ見られる確認用アプリを作って起動する。
-# 本体（ColorHunt.swiftpm）には一切手を加えない。
+# 本体（ColorHunt_team.swiftpm）には一切手を加えない。
 #
 #   使い方:  ./harness.sh [画面名]
 #
@@ -17,7 +17,7 @@
 # ------------------------------------------------------------------
 SCREEN="${1:-home}"
 ROOT="$(cd "$(dirname "$0")" && pwd)"
-SRC="$ROOT/ColorHunt.swiftpm"
+SRC="$ROOT/ColorHunt_team.swiftpm"
 WORK="${TMPDIR:-/tmp}/ColorHuntHarness"
 PKG="$WORK/Harness.swiftpm"
 BUNDLE="com.example.colorhunt.harness"

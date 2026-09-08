@@ -32,7 +32,7 @@ Safari でひらくだけで使えます。ロイロノートや Apple Classroom
 
 | | 児童の操作 | 準備 | 向いている場面 |
 |---|---|---|---|
-| **[ColorHunt.swiftpm](ColorHunt.swiftpm/)** | Playgrounds を開いて ▶︎ | 1台ずつ手作業 | 教師が作って直す・少数台 |
+| **[ColorHunt_team.swiftpm](ColorHunt_team.swiftpm/)** | Playgrounds を開いて ▶︎ | 1台ずつ手作業 | 教師が作って直す・少数台 |
 | **[web/](web/)** | **URL をひらくだけ** | GitHub Pages で公開ずみ | **授業で全員に配る** |
 
 - Swift 版は、閾値をその場で書き換えて ▶︎ で試せるのが強みです（教室での調整用）
@@ -40,7 +40,7 @@ Safari でひらくだけで使えます。ロイロノートや Apple Classroom
 
 それぞれの詳しい説明は各フォルダの README にあります。
 
-- [ColorHunt.swiftpm/README.md](ColorHunt.swiftpm/README.md) — Swift Playgrounds 版
+- [ColorHunt_team.swiftpm/README.md](ColorHunt_team.swiftpm/README.md) — Swift Playgrounds 版
 - [web/README.md](web/README.md) — Web 版
 
 ---
@@ -67,7 +67,7 @@ Safari でひらくだけで使えます。ロイロノートや Apple Classroom
 
 TEAM HUNT は、Apple Classroom で代表端末を大画面にミラーリングして発表する授業を
 想定しています。アプリは撮った枚数（FOUND）だけを見せ、**得点は教師が黒板で決めます**。
-くわしくは [ColorHunt.swiftpm/README.md](ColorHunt.swiftpm/README.md) を参照してください。
+くわしくは [ColorHunt_team.swiftpm/README.md](ColorHunt_team.swiftpm/README.md) を参照してください。
 
 > Web 版は今のところ SOLO HUNT のみです。
 
@@ -89,7 +89,7 @@ TEAM HUNT は、Apple Classroom で代表端末を大画面にミラーリング
 
 | 版 | ファイル |
 |---|---|
-| Swift | `ColorHunt.swiftpm/Models/ColorProfile.swift` |
+| Swift | `ColorHunt_team.swiftpm/Models/ColorProfile.swift` |
 | Web | `web/js/colors.js` |
 
 **片方だけ直すと両者がずれます。** 直したらもう片方も合わせてください。
@@ -103,7 +103,7 @@ TEAM HUNT は、Apple Classroom で代表端末を大画面にミラーリング
 
 ```
 .
-├── ColorHunt.swiftpm/          iPad / Swift Playgrounds 版
+├── ColorHunt_team.swiftpm/          iPad / Swift Playgrounds 版
 ├── web/                        Web 版（静的サイト。ビルド不要）
 ├── typecheck.sh                Swift 版の型チェック（Mac）
 ├── harness.sh                  Swift 版をカメラ無しで画面確認する（シミュレータ）
@@ -111,7 +111,7 @@ TEAM HUNT は、Apple Classroom で代表端末を大画面にミラーリング
 ```
 
 `ColorHunt _defound.swiftpm` / `ColorHunt_7colours.swiftpm` は作業中のスナップショットです。
-本番は `ColorHunt.swiftpm` です。
+本番は `ColorHunt_team.swiftpm` です。
 
 ---
 
@@ -122,7 +122,7 @@ TEAM HUNT は、Apple Classroom で代表端末を大画面にミラーリング
 ./typecheck.sh
 
 # Swift 版のフルビルド（iOS 向け）
-cd ColorHunt.swiftpm && xcodebuild -scheme ColorHunt \
+cd ColorHunt_team.swiftpm && xcodebuild -scheme ColorHunt \
   -destination 'generic/platform=iOS' CODE_SIGNING_ALLOWED=NO build
 
 # Swift 版をシミュレータで画面確認（カメラ無しでも見られる）
