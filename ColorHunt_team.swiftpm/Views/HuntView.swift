@@ -29,7 +29,9 @@ struct HuntView: View {
             cameraLayer
 
             if camera.authorization == .denied {
-                permissionLayer
+                permissionDeniedLayer
+            } else if camera.authorization == .undetermined {
+                permissionPrimingLayer
             } else {
                 reticleLayer
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -53,12 +55,17 @@ struct HuntView: View {
             Button("Finish", role: .destructive) { onFinishTeamHunt() }
             Button("Cancel", role: .cancel) {}
         }
-        // 色が変わるたびにカウントダウンをやり直し、あたらしい色を大きく知らせる
-        .task(id: detector.activeProfile.id) {
+        // 色が変わるたび、また許可が下りたときにカウントダウンをやり直す
+        .task(id: countdownKey) {
             await runCountdown()
         }
         .onAppear {
-            camera.start()
+            // いきなり許可ダイアログを出さず、まず「つぎに聞かれるよ」と伝える。
+            // 児童が反射的に「許可しない」を押してしまうのを防ぐため。
+            camera.refreshAuthorization()
+            if camera.authorization == .authorized {
+                camera.start()
+            }
         }
         .onDisappear {
             detector.pause()
@@ -71,7 +78,7 @@ struct HuntView: View {
         // 保険: カウントダウンが終わったあとに班のセッションが有効になった場合でも
         // 時計が動き出すようにしておく（通常は runCountdown の最後で始まる）
         .onValueChange(of: teamHunt.isActive) { active in
-            if active && countdown == nil {
+            if active && countdown == nil && camera.authorization == .authorized {
                 teamHunt.beginTiming()
             }
         }
@@ -399,7 +406,14 @@ struct HuntView: View {
         .accessibilityLabel(detector.activeProfile.displayName + " " + String(value))
     }
 
+    /// 色が変わったとき、または許可が下りたときにカウントダウンをやり直すためのキー
+    private var countdownKey: String {
+        detector.activeProfile.id + (camera.authorization == .authorized ? "|ok" : "|wait")
+    }
+
     private func runCountdown() async {
+        // カメラが使えるようになるまでは数え始めない（TEAM の5分も始まらない）
+        guard camera.authorization == .authorized else { return }
         detector.pause()
         // あたらしい色になったら、まず英語で1回読み上げる（聞く → さがす）
         speech.speak(detector.activeProfile.speechText)
@@ -419,21 +433,74 @@ struct HuntView: View {
 
     // MARK: - カメラが使えないとき
 
-    private var permissionLayer: some View {
+    /// 許可ダイアログを出す前の予告。
+    /// 児童が反射的に「許可しない」を押してしまうと、Swift Playgrounds では
+    /// 復旧が難しい（設定にアプリ個別の項目が出ない）ので、必ず先に見せる。
+    private var permissionPrimingLayer: some View {
         ZStack {
             Theme.background.ignoresSafeArea()
-            VStack(spacing: 26) {
+            VStack(spacing: 22) {
                 Image(systemName: "camera.fill")
-                    .font(.system(size: 64))
-                    .foregroundColor(Theme.subtle)
-                Text("カメラを つかうために\nきょかが ひつようです")
+                    .font(.system(size: 72))
+                    .foregroundColor(Theme.accent)
+
+                Text("つぎに\n「カメラを つかっても いい？」\nと きかれます")
                     .font(Theme.label(28))
                     .foregroundColor(Theme.ink)
                     .multilineTextAlignment(.center)
-                Text("「せってい」→「Color Hunt」→「カメラ」を\nオンにしてください。")
-                    .font(.system(size: 17))
+                    .lineSpacing(6)
+
+                Text("「OK」を おしてね")
+                    .font(Theme.display(40))
+                    .foregroundColor(Theme.accent)
+
+                Button("すすむ") {
+                    Feedback.tap()
+                    camera.start()
+                }
+                .buttonStyle(PrimaryButtonStyle())
+                .accessibilityHint("カメラの きょかを ききます")
+
+                Button("ホームに もどる") {
+                    onClose()
+                }
+                .buttonStyle(SecondaryButtonStyle())
+            }
+            .padding(.horizontal, 30)
+        }
+    }
+
+    /// 「許可しない」を押してしまったあと。
+    /// 児童には「先生を呼ぶ」ことだけ伝え、直し方は先生向けに小さく書く。
+    private var permissionDeniedLayer: some View {
+        ZStack {
+            Theme.background.ignoresSafeArea()
+            VStack(spacing: 20) {
+                Image(systemName: "camera.fill")
+                    .font(.system(size: 64))
                     .foregroundColor(Theme.subtle)
+                Text("カメラが つかえません\nせんせいを よんでね")
+                    .font(Theme.label(28))
+                    .foregroundColor(Theme.ink)
                     .multilineTextAlignment(.center)
+                    .lineSpacing(4)
+
+                // ここから先生向け
+                VStack(spacing: 6) {
+                    Text("先生へ")
+                        .font(Theme.label(15))
+                        .foregroundColor(Theme.subtle)
+                    Text("Swift Playgrounds から実行しているため、\n設定に「Color Hunt」の項目は出ません。\n\n設定 →「Swift Playgrounds」→「カメラ」をオン\n（無い場合は 設定 → プライバシーとセキュリティ → カメラ）")
+                        .font(.system(size: 14))
+                        .foregroundColor(Theme.subtle)
+                        .multilineTextAlignment(.center)
+                        .lineSpacing(3)
+                }
+                .padding(14)
+                .background(
+                    RoundedRectangle(cornerRadius: 14)
+                        .fill(Theme.ink.opacity(0.05))
+                )
 
                 Button("せっていを ひらく") {
                     if let url = URL(string: UIApplication.openSettingsURLString) {

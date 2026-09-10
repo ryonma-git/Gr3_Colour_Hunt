@@ -14,6 +14,10 @@
 #   found    RED をみつけた状態（合成した赤い色を流し込む）
 #   preview  撮影後の確認画面（合成写真。保存とロイロ共有まで試せる）
 #   gallery  MY COLORS（シートとして表示）
+#
+#   第2引数:
+#   askcam   カメラ許可を「まだ聞いていない」状態にする（予告画面の確認）
+#   denycam  「許可しない」を押した状態にする（先生向け案内の確認）
 # ------------------------------------------------------------------
 SCREEN="${1:-home}"
 ROOT="$(cd "$(dirname "$0")" && pwd)"
@@ -430,7 +434,13 @@ fi
 
 echo "==> インストールして起動 (screen=$SCREEN)"
 xcrun simctl install "$UDID" "$WORK/dd/Build/Products/Debug-iphonesimulator/Harness.app"
-xcrun simctl privacy "$UDID" grant camera "$BUNDLE" >/dev/null 2>&1
+# 既定ではカメラを許可しておく（画面を見たいだけのことが多いため）。
+# 権限まわりを試すときは第2引数で askcam / denycam を渡す。
+case "${2:-}" in
+  askcam)  xcrun simctl privacy "$UDID" reset  camera "$BUNDLE" >/dev/null 2>&1 ;;
+  denycam) xcrun simctl privacy "$UDID" revoke camera "$BUNDLE" >/dev/null 2>&1 ;;
+  *)       xcrun simctl privacy "$UDID" grant  camera "$BUNDLE" >/dev/null 2>&1 ;;
+esac
 xcrun simctl terminate "$UDID" "$BUNDLE" >/dev/null 2>&1
 case "${2:-}" in
   auto)    EXTRA=(-harnessAutoFinish YES) ;;

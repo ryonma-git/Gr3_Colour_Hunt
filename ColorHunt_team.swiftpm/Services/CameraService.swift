@@ -54,6 +54,19 @@ final class CameraService: NSObject, ObservableObject {
 
     // MARK: - 開始 / 停止
 
+    /// 許可ダイアログを出さずに、いまの許可状態だけを調べる。
+    /// 「つぎに カメラの ダイアログが 出ます」と先に知らせるために使う。
+    func refreshAuthorization() {
+        switch AVCaptureDevice.authorizationStatus(for: .video) {
+        case .authorized:
+            authorization = .authorized
+        case .notDetermined:
+            authorization = .undetermined
+        default:
+            authorization = .denied
+        }
+    }
+
     /// カメラを使い始める。権限がまだなら、ここで確認ダイアログが出る。
     func start() {
         switch AVCaptureDevice.authorizationStatus(for: .video) {
