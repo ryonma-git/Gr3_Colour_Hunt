@@ -31,6 +31,8 @@ struct RootView: View {
     @State private var showFolderSetup = false
     @State private var didBootstrap = false
     @State private var pendingTeamNumber: Int?
+    @State private var savedFlashImage: UIImage?
+    @State private var saveFailed = false
 
     var body: some View {
         ZStack {
@@ -38,10 +40,9 @@ struct RootView: View {
 
             content
 
-            if screen == .preview, let photo = camera.capturedPhoto {
-                CapturePreviewView(photo: photo,
-                                   onRetake: retake,
-                                   onFinish: finishCapture)
+            // 撮ったら確認画面は出さず、一瞬だけ知らせてすぐ探索へ戻る
+            if let image = savedFlashImage {
+                savedFlash(image)
             }
         }
         .preferredColorScheme(.light)
@@ -56,9 +57,8 @@ struct RootView: View {
         }
         .onAppear(perform: bootstrap)
         .onValueChange(of: camera.capturedPhoto != nil) { hasPhoto in
-            if hasPhoto && screen == .hunt {
-                detector.pause()
-                screen = .preview
+            if hasPhoto && screen == .hunt, let photo = camera.capturedPhoto {
+                autoSave(photo)
             }
         }
         .onValueChange(of: teamHunt.isTimeUp) { timeUp in
@@ -137,12 +137,8 @@ struct RootView: View {
         }
 
         storage.bootstrap()
-
-        if storage.shouldPromptFolderSetup {
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) {
-                showFolderSetup = true
-            }
-        }
+        // 初回のフォルダ選択は自動では出さない（児童が迷うため）。
+        // 保存先は先生がホーム下の小さな「ほぞんさき」から選ぶ。
     }
 
     // MARK: - SOLO HUNT（これまでどおり）
@@ -164,9 +160,12 @@ struct RootView: View {
 
     // MARK: - TEAM HUNT
 
+    /// 班をえらんだら、確認画面を出さずにすぐ始める。
+    /// 色は 3・2・1 のあいだに大きく表示し、英語で読み上げて知らせる。
     private func selectTeam(_ number: Int) {
         pendingTeamNumber = number
-        screen = .teamReady
+        guard let profile = TeamHuntConfiguration.profile(for: number) else { return }
+        startTeamHunt(teamNumber: number, profile: profile)
     }
 
     private func startTeamHunt(teamNumber: Int, profile: ColorProfile) {
@@ -204,7 +203,70 @@ struct RootView: View {
         }
     }
 
-    // MARK: - 撮影確認からの戻り（SOLO / TEAM 共通）
+    // MARK: - 撮影 → 自動保存（SOLO / TEAM 共通）
+
+    private func autoSave(_ photo: CapturedPhoto) {
+        detector.pause()
+        let mode: HuntMode = teamHunt.isActive ? .team : .solo
+        if let capture = storage.save(photo: photo,
+                                      profile: detector.activeProfile,
+                                      hsv: detector.foundHSV ?? HSVColor.zero,
+                                      mode: mode,
+                                      teamNumber: teamHunt.teamNumber) {
+            // Found count が増えるのは、ここ（保存できたとき）だけ
+            if teamHunt.isActive {
+                teamHunt.record(capture)
+            }
+            saveFailed = false
+            Feedback.tap()
+        } else {
+            saveFailed = true
+        }
+        savedFlashImage = photo.image
+        camera.clearCapturedPhoto()
+
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) {
+            savedFlashImage = nil
+            continueAfterSave()
+        }
+    }
+
+    private func continueAfterSave() {
+        guard screen == .hunt else { return }
+        if teamHunt.isActive {
+            if teamHunt.isTimeUp {
+                finishTeamHunt()
+                return
+            }
+            detector.reset()         // 同じ色を、もう一度さがす
+            detector.resume()
+        } else {
+            detector.pickNextColor() // SOLO は次の色へ（3・2・1 と読み上げが入る）
+            detector.resume()
+        }
+    }
+
+    private func savedFlash(_ image: UIImage) -> some View {
+        ZStack {
+            Color.black.opacity(0.82).ignoresSafeArea()
+            VStack(spacing: 18) {
+                Image(uiImage: image)
+                    .resizable()
+                    .scaledToFit()
+                    .frame(maxWidth: 520, maxHeight: 520)
+                    .clipShape(RoundedRectangle(cornerRadius: 16))
+                    .overlay(RoundedRectangle(cornerRadius: 16).stroke(Color.white, lineWidth: 4))
+                Text(saveFailed ? "ほぞん できませんでした" : "✓ ほぞんしました")
+                    .font(Theme.display(34))
+                    .foregroundColor(saveFailed ? Theme.accent : .white)
+            }
+            .padding(24)
+        }
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel(saveFailed ? "ほぞん できませんでした" : "ほぞんしました")
+    }
+
+    // MARK: - 撮影確認からの戻り（いまは使っていない。検証用ハーネスが使う）
 
     /// とりなおす: みつけた状態はそのままにして、カメラへもどる
     private func retake() {
@@ -242,8 +304,11 @@ struct RootView: View {
     private func handleScenePhase(_ phase: ScenePhase) {
         switch phase {
         case .active:
-            if screen == .hunt || screen == .preview {
-                camera.start()
+            if screen == .hunt {
+                camera.refreshAuthorization()
+                if camera.authorization == .authorized {
+                    camera.start()
+                }
             }
         case .background:
             camera.stop()

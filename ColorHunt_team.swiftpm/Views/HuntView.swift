@@ -169,8 +169,6 @@ struct HuntView: View {
                 Spacer()
                 if isTeam {
                     teamBadge
-                } else {
-                    galleryButton
                 }
             }
             .padding(.horizontal, 18)

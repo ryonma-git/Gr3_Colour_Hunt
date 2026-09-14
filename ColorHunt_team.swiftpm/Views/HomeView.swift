@@ -27,6 +27,7 @@ struct HomeView: View {
                         .foregroundColor(Theme.subtle)
                         .lineLimit(1)
                         .minimumScaleFactor(0.5)
+    
                 }
                 .padding(.horizontal, 24)
 
@@ -59,15 +60,22 @@ struct HomeView: View {
                     .accessibilityLabel("チームハント")
                     .accessibilityHint("はんで 5ふんかん いろさがしを します")
 
-                    Button("MY COLORS") {
-                        onOpenGallery()
-                    }
-                    .buttonStyle(SecondaryButtonStyle())
-                    .accessibilityHint("とった しゃしんを みます")
+                    Text("カメラを きかれたら「OK」を おしてね")
+                        .font(Theme.label(16))
+                        .foregroundColor(Theme.subtle)
+                        .padding(.top, 2)
                 }
                 .padding(.horizontal, 28)
 
                 Spacer()
+
+                Button("MY COLORS（とった しゃしん）") {
+                    onOpenGallery()
+                }
+                .font(Theme.label(17))
+                .foregroundColor(Theme.subtle)
+                .padding(.bottom, 4)
+                .accessibilityHint("とった しゃしんを みます")
 
                 storageFooter
                     .padding(.bottom, 8)
@@ -99,8 +107,9 @@ struct HomeView: View {
                     .lineLimit(1)
                     .truncationMode(.middle)
             }
-            .font(.system(size: 15, weight: .medium))
-            .foregroundColor(storage.needsFolderSelection ? Theme.accent : Theme.subtle)
+            .font(.system(size: 13, weight: .medium))
+            // 児童が不安にならないよう、赤にはしない（先生向けの小さな表示）
+            .foregroundColor(Theme.subtle.opacity(0.8))
             .padding(.horizontal, 14)
             .padding(.vertical, 8)
         }
