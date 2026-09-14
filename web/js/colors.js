@@ -4,8 +4,11 @@
 //  ★ 判定に関わる数値はこのファイルだけにある。
 //    調整するときはここを直して保存し、ブラウザを再読み込みするだけ。
 //
-//  Swift 版 (ColorHunt.swiftpm/Models/ColorProfile.swift) と同じ数値。
+//  Swift 版 (ColorHunt_team.swiftpm/Models/ColorProfile.swift) と同じ数値。
 //  片方を変えたらもう片方も合わせること。
+//
+//  profileVersion 2（2026-09-14）: 授業で PURPLE・YELLOW などが反応しにくかったので、
+//  外れていた境界をゆるめた。ORANGE だけは変更なし。
 // ============================================================================
 
 /** 色相の範囲。from > to のときは 360度をまたぐ範囲として扱う。 */
@@ -19,11 +22,11 @@ export const COLOR_PROFILES = [
     id: 'red',
     displayName: 'RED',
     speechText: 'Red',
-    hueRanges: [hue(345, 360), hue(0, 14)],
+    hueRanges: [hue(340, 360), hue(0, 14)],
     saturationRange: range(0.45, 1.0),   // これ未満は「肌」や「ピンク」
     brightnessRange: range(0.20, 1.0),
     difficulty: 'basic',
-    profileVersion: 1,
+    profileVersion: 2,
     tint: '#e62929'
   },
   {
@@ -41,44 +44,44 @@ export const COLOR_PROFILES = [
     id: 'yellow',
     displayName: 'YELLOW',
     speechText: 'Yellow',
-    hueRanges: [hue(45, 70)],
-    saturationRange: range(0.40, 1.0),
-    brightnessRange: range(0.55, 1.0),   // 暗いとオリーブ色なので明るい方だけ
+    hueRanges: [hue(40, 75)],            // 山吹色からテニスボールの黄色まで
+    saturationRange: range(0.28, 1.0),   // 光って白っぽく写った黄色も通す
+    brightnessRange: range(0.45, 1.0),   // 影の黄色も通す（これより暗いとオリーブ色）
     difficulty: 'basic',
-    profileVersion: 1,
+    profileVersion: 2,
     tint: '#f7c71a'
   },
   {
     id: 'green',
     displayName: 'GREEN',
     speechText: 'Green',
-    hueRanges: [hue(75, 165)],
-    saturationRange: range(0.25, 1.0),
+    hueRanges: [hue(70, 175)],           // 黄緑から青緑まで
+    saturationRange: range(0.20, 1.0),   // うすい緑も通す
     brightnessRange: range(0.15, 1.0),   // 黒板の濃い緑も通す
     difficulty: 'basic',
-    profileVersion: 1,
+    profileVersion: 2,
     tint: '#2eb354'
   },
   {
     id: 'blue',
     displayName: 'BLUE',
     speechText: 'Blue',
-    hueRanges: [hue(195, 250)],
-    saturationRange: range(0.35, 1.0),
+    hueRanges: [hue(180, 250)],          // ターコイズから紺色まで
+    saturationRange: range(0.22, 1.0),   // うすい水色（空色）も通す
     brightnessRange: range(0.18, 1.0),   // 紺色も通す
     difficulty: 'basic',
-    profileVersion: 1,
+    profileVersion: 2,
     tint: '#216be6'
   },
   {
     id: 'purple',
     displayName: 'PURPLE',
     speechText: 'Purple',
-    hueRanges: [hue(255, 305)],
-    saturationRange: range(0.25, 1.0),
-    brightnessRange: range(0.18, 1.0),
+    hueRanges: [hue(245, 325)],          // カメラで青っぽく写る紫から赤むらさきまで
+    saturationRange: range(0.18, 1.0),   // ラベンダーなど、うすい紫も通す
+    brightnessRange: range(0.22, 1.0),   // S を下げたぶん、黒い服を拾わないよう少し上げた
     difficulty: 'basic',
-    profileVersion: 1,
+    profileVersion: 2,
     tint: '#8c4dc7'
   },
   {
@@ -87,24 +90,29 @@ export const COLOR_PROFILES = [
     id: 'brown',
     displayName: 'BROWN',
     speechText: 'Brown',
-    hueRanges: [hue(15, 45)],
-    saturationRange: range(0.38, 0.64),  // 0.65 以上は ORANGE / 0.38 未満は肌
-    brightnessRange: range(0.18, 0.82),
+    hueRanges: [hue(10, 45)],            // 赤みの茶色も通す
+    saturationRange: range(0.38, 0.70),  // 0.38 未満は肌 / 0.70 より鮮やかなら ORANGE
+    brightnessRange: range(0.18, 0.85),
     difficulty: 'advanced',
-    profileVersion: 1,
+    profileVersion: 2,
     tint: '#825c36'
   },
   {
-    // PINK は「赤と同じ色相だが、うすい・明るい」で分ける。
-    // 色相だけに頼らない設計の実例。
+    // PINK は2つの範囲の合わせ技。色相だけに頼らない設計の実例。
+    //  ① 赤と同じ色相の「うすい赤」（ももいろ）。こい赤は RED なので S は 0.70 まで
+    //  ② 赤むらさき寄りの色相の「こいピンク」（ピンクのペンなど）。
+    //     この色相に RED は無いので S の上限をなくした
     id: 'pink',
     displayName: 'PINK',
     speechText: 'Pink',
-    hueRanges: [hue(310, 360), hue(0, 8)],
-    saturationRange: range(0.18, 0.70),  // 0.70 より濃いものは RED 扱い
+    hueRanges: [hue(340, 360), hue(0, 8)],
+    saturationRange: range(0.15, 0.70),  // 0.70 より濃いものは RED 扱い
     brightnessRange: range(0.60, 1.0),   // 暗いピンクは無い
+    extraRegions: [
+      { hueRanges: [hue(300, 340)], saturationRange: range(0.15, 1.0), brightnessRange: range(0.60, 1.0) }
+    ],
     difficulty: 'basic',
-    profileVersion: 1,
+    profileVersion: 2,
     tint: '#f273a6'
   }
 ];
@@ -154,8 +162,10 @@ export const TUNING = {
   stableDuration: 0.5,
   /** 手ぶれ対策。この秒数だけ外れても、まだ当たっているとみなす */
   releaseGrace: 0.2,
-  /** みつけた状態を解除するまでの時間（みつけるのと同じ長さ） */
-  foundReleaseDuration: 0.5
+  /** みつけた状態を解除するまでの時間。みつける時間より少し長くして、
+   *  シャッターを押すときにカメラが動いても緑が消えにくくしてある。
+   *  まだ早いときは 1.0、みつける時間とそろえたいときは 0.5。 */
+  foundReleaseDuration: 0.8
 };
 
 // ---------------------------------------------------------------------------
@@ -168,12 +178,18 @@ function hueContains(r, h) {
     : x >= r.from || x <= r.to;
 }
 
-/** 中央の色がこのプロファイルの条件を満たすか */
-export function matches(profile, hsv) {
-  const { saturationRange: s, brightnessRange: v } = profile;
+/** 色相・彩度・明度の範囲（プロファイル本体か、extraRegions の1つ）に入っているか */
+function inRegion(region, hsv) {
+  const { saturationRange: s, brightnessRange: v } = region;
   if (hsv.s < s.lower || hsv.s > s.upper) return false;
   if (hsv.v < v.lower || hsv.v > v.upper) return false;
-  return profile.hueRanges.some((r) => hueContains(r, hsv.h));
+  return region.hueRanges.some((r) => hueContains(r, hsv.h));
+}
+
+/** 中央の色がこのプロファイルの条件を満たすか（どれか1つの範囲に入っていればよい） */
+export function matches(profile, hsv) {
+  if (inRegion(profile, hsv)) return true;
+  return (profile.extraRegions || []).some((region) => inRegion(region, hsv));
 }
 
 export function profileById(id) {

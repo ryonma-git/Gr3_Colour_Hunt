@@ -2,8 +2,13 @@ import SwiftUI
 
 // ============================================================================
 //  Color Hunt の「色の定義」と「判定のチューニング」は、すべてこのファイルにある。
-//  RED の判定がきびしすぎる／ゆるすぎるときは、このファイルだけを直せばよい。
-//  （詳しくは README.md「RED判定値の調整場所」を参照）
+//  色の判定がきびしすぎる／ゆるすぎるときは、このファイルだけを直せばよい。
+//  （詳しくは README.md「7. 色の判定値の調整場所」を参照）
+//
+//  Web 版 (web/js/colors.js) と同じ数値。片方を変えたらもう片方も合わせること。
+//
+//  profileVersion 2（2026-09-14）: 授業で PURPLE・YELLOW などが反応しにくかったので、
+//  外れていた境界をゆるめた。ORANGE だけは変更なし。
 // ============================================================================
 
 /// 0...1 の値がこの範囲に入っているかを判定する。
@@ -43,6 +48,21 @@ struct HueRange: Codable, Hashable {
     }
 }
 
+/// 色相・彩度・明度の範囲の組。
+/// ふつうは ColorProfile 本体の範囲だけで足りる。
+/// PINK のように「2つの範囲の合わせ技」にしたい色だけ `extraRegions` に足す。
+struct ColorRegion: Codable, Hashable {
+    var hueRanges: [HueRange]
+    var saturationRange: ValueRange
+    var brightnessRange: ValueRange
+
+    func contains(_ hsv: HSVColor) -> Bool {
+        guard saturationRange.contains(hsv.s) else { return false }
+        guard brightnessRange.contains(hsv.v) else { return false }
+        return hueRanges.contains { $0.contains(hsv.h) }
+    }
+}
+
 /// 将来の難易度分け（今回は basic のみ使用）
 enum ColorDifficulty: String, Codable, Hashable {
     case basic
@@ -77,6 +97,8 @@ struct ColorProfile: Identifiable, Codable, Hashable {
     var saturationRange: ValueRange
     /// 明度の許容範囲
     var brightnessRange: ValueRange
+    /// 追加の範囲。どれか1つに入っていれば一致とみなす。ほとんどの色は空。
+    var extraRegions: [ColorRegion] = []
 
     var difficulty: ColorDifficulty
     /// 判定条件を変更したら +1 する。保存データにも記録される。
@@ -85,11 +107,13 @@ struct ColorProfile: Identifiable, Codable, Hashable {
     /// UI の色（判定には無関係）
     var tint: RGBTriple
 
-    /// 中央の色がこのプロファイルの条件を満たすか。
+    /// 中央の色がこのプロファイルの条件を満たすか（どれか1つの範囲に入っていればよい）。
     func matches(_ hsv: HSVColor) -> Bool {
-        guard saturationRange.contains(hsv.s) else { return false }
-        guard brightnessRange.contains(hsv.v) else { return false }
-        return hueRanges.contains { $0.contains(hsv.h) }
+        let primary = ColorRegion(hueRanges: hueRanges,
+                                  saturationRange: saturationRange,
+                                  brightnessRange: brightnessRange)
+        if primary.contains(hsv) { return true }
+        return extraRegions.contains { $0.contains(hsv) }
     }
 
     var displayColor: Color {
@@ -126,13 +150,13 @@ extension ColorProfile {
         displayName: "RED",
         speechText: "Red",
         hueRanges: [
-            HueRange(345, 360),
+            HueRange(340, 360),
             HueRange(0, 14)
         ],
         saturationRange: ValueRange(0.45, 1.0),   // これ未満は「肌」や「ピンク」
         brightnessRange: ValueRange(0.20, 1.0),
         difficulty: .basic,
-        profileVersion: 1,
+        profileVersion: 2,
         tint: RGBTriple(r: 0.90, g: 0.16, b: 0.16)
     )
 
@@ -152,11 +176,11 @@ extension ColorProfile {
         id: "yellow",
         displayName: "YELLOW",
         speechText: "Yellow",
-        hueRanges: [HueRange(45, 70)],
-        saturationRange: ValueRange(0.40, 1.0),
-        brightnessRange: ValueRange(0.55, 1.0),   // 暗いとオリーブ色なので明るい方だけ
+        hueRanges: [HueRange(40, 75)],            // 山吹色からテニスボールの黄色まで
+        saturationRange: ValueRange(0.28, 1.0),   // 光って白っぽく写った黄色も通す
+        brightnessRange: ValueRange(0.45, 1.0),   // 影の黄色も通す（これより暗いとオリーブ色）
         difficulty: .basic,
-        profileVersion: 1,
+        profileVersion: 2,
         tint: RGBTriple(r: 0.97, g: 0.78, b: 0.10)
     )
 
@@ -164,11 +188,11 @@ extension ColorProfile {
         id: "green",
         displayName: "GREEN",
         speechText: "Green",
-        hueRanges: [HueRange(75, 165)],
-        saturationRange: ValueRange(0.25, 1.0),
+        hueRanges: [HueRange(70, 175)],           // 黄緑から青緑まで
+        saturationRange: ValueRange(0.20, 1.0),   // うすい緑も通す
         brightnessRange: ValueRange(0.15, 1.0),   // 黒板の濃い緑も通す
         difficulty: .basic,
-        profileVersion: 1,
+        profileVersion: 2,
         tint: RGBTriple(r: 0.18, g: 0.70, b: 0.33)
     )
 
@@ -176,11 +200,11 @@ extension ColorProfile {
         id: "blue",
         displayName: "BLUE",
         speechText: "Blue",
-        hueRanges: [HueRange(195, 250)],
-        saturationRange: ValueRange(0.35, 1.0),
+        hueRanges: [HueRange(180, 250)],          // ターコイズから紺色まで
+        saturationRange: ValueRange(0.22, 1.0),   // うすい水色（空色）も通す
         brightnessRange: ValueRange(0.18, 1.0),   // 紺色も通す
         difficulty: .basic,
-        profileVersion: 1,
+        profileVersion: 2,
         tint: RGBTriple(r: 0.13, g: 0.42, b: 0.90)
     )
 
@@ -188,36 +212,43 @@ extension ColorProfile {
         id: "purple",
         displayName: "PURPLE",
         speechText: "Purple",
-        hueRanges: [HueRange(255, 305)],
-        saturationRange: ValueRange(0.25, 1.0),
-        brightnessRange: ValueRange(0.18, 1.0),
+        hueRanges: [HueRange(245, 325)],          // カメラで青っぽく写る紫から赤むらさきまで
+        saturationRange: ValueRange(0.18, 1.0),   // ラベンダーなど、うすい紫も通す
+        brightnessRange: ValueRange(0.22, 1.0),   // S を下げたぶん、黒い服を拾わないよう少し上げた
         difficulty: .basic,
-        profileVersion: 1,
+        profileVersion: 2,
         tint: RGBTriple(r: 0.55, g: 0.30, b: 0.78)
     )
 
-    /// PINK は「赤と同じ色相だが、うすい・明るい」で分ける。
-    /// 色相だけに頼らない設計が効いている例。
+    /// PINK は2つの範囲の合わせ技。色相だけに頼らない設計が効いている例。
+    /// ① 赤と同じ色相の「うすい赤」（ももいろ）。こい赤は RED なので S は 0.70 まで。
+    /// ② 赤むらさき寄りの色相の「こいピンク」（ピンクのペンなど）。
+    ///    この色相に RED は無いので、S の上限をなくした。
     static let pink = ColorProfile(
         id: "pink",
         displayName: "PINK",
         speechText: "Pink",
         hueRanges: [
-            HueRange(310, 360),
+            HueRange(340, 360),
             HueRange(0, 8)
         ],
-        saturationRange: ValueRange(0.18, 0.70),  // 0.70 より濃いものは RED 扱い
+        saturationRange: ValueRange(0.15, 0.70),  // 0.70 より濃いものは RED 扱い
         brightnessRange: ValueRange(0.60, 1.0),   // 暗いピンクは無い
+        extraRegions: [
+            ColorRegion(hueRanges: [HueRange(300, 340)],
+                        saturationRange: ValueRange(0.15, 1.0),
+                        brightnessRange: ValueRange(0.60, 1.0))
+        ],
         difficulty: .basic,
-        profileVersion: 1,
+        profileVersion: 2,
         tint: RGBTriple(r: 0.95, g: 0.45, b: 0.65)
     )
 
     /// TEAM HUNT の8班目で使う色。
     ///
     /// BROWN は「暗い / くすんだ ORANGE」なので、色相だけでは分けられない。
-    /// ORANGE を S 0.65以上に限っているのに対し、BROWN は S 0.64以下・V 0.78以下
-    /// という「鮮やかすぎない・明るすぎない」条件で分離している。
+    /// ORANGE を S 0.65以上に限っているのに対し、BROWN は S 0.38〜0.70・V 0.85以下
+    /// という「鮮やかすぎない・明るすぎない」条件で分けている（0.65〜0.70 は両方に入る）。
     /// 木の机・床・段ボール・茶色い筆箱が通ることを優先した。
     ///
     /// ※ 注意: 茶色は肌の色と HSV 上でどうしても重なる。
@@ -230,11 +261,11 @@ extension ColorProfile {
         id: "brown",
         displayName: "BROWN",
         speechText: "Brown",
-        hueRanges: [HueRange(15, 45)],
-        saturationRange: ValueRange(0.38, 0.64),  // 0.65 以上は ORANGE / 0.38 未満は肌
-        brightnessRange: ValueRange(0.18, 0.82),  // 明るすぎるものは ORANGE / 肌
+        hueRanges: [HueRange(10, 45)],            // 赤みの茶色も通す
+        saturationRange: ValueRange(0.38, 0.70),  // 0.38 未満は肌 / 0.70 より鮮やかなら ORANGE
+        brightnessRange: ValueRange(0.18, 0.85),  // 明るすぎるものは ORANGE / 肌
         difficulty: .advanced,
-        profileVersion: 1,
+        profileVersion: 2,
         tint: RGBTriple(r: 0.51, g: 0.36, b: 0.21)
     )
 
@@ -285,7 +316,8 @@ enum HuntTuning {
 
     /// みつけた状態（緑）を解除するまでの時間。
     /// 対象の色から外れ続けた時間がこれを超えると、また別のものを探し始められる。
-    /// みつける時間と同じにしてある（対称）。
-    /// 児童がシャッターを押す前に解除されてしまうときは 1.0 くらいに伸ばす。
-    static let foundReleaseDuration: TimeInterval = stableDuration
+    /// みつける時間（0.5秒）より少し長くして、シャッターを押すときに
+    /// カメラが動いても緑が消えにくくしてある（2026-09-14 の授業のようすから）。
+    /// まだ早いときは 1.0、みつける時間とそろえたいときは stableDuration にする。
+    static let foundReleaseDuration: TimeInterval = 0.8
 }

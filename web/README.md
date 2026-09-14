@@ -1,7 +1,8 @@
 # Color Hunt Web
 
 Swift Playgrounds 版と同じ活動を、**URL をひらくだけ**でできるようにした Web 版です。
-判定に使う数値は Swift 版とまったく同じで、同じ26色のテストで結果が一致することを確認しています。
+判定に使う数値は Swift 版とまったく同じです（2026-09-14 に、HSV を細かく区切った全点で
+両者の判定結果が一致することを確認しています）。
 
 ## なぜ Web 版か
 
@@ -99,7 +100,7 @@ Swift 版と同じ `library.json` 形式のメタデータを書き出せます�
 ```js
 {
   id: 'red',
-  hueRanges: [hue(345, 360), hue(0, 14)],
+  hueRanges: [hue(340, 360), hue(0, 14)],
   saturationRange: range(0.45, 1.0),   // ← 反応しないときは下げる
   brightnessRange: range(0.20, 1.0),
   ...

@@ -112,7 +112,7 @@ final class ColorDetectionService: ObservableObject {
             }
 
             // 対象の色から外れつづけたら「みつけた」を解除して、
-            // また別のものを探し始められるようにする（みつけるのと同じ時間で対称）
+            // また別のものを探し始められるようにする（みつける時間より少し長め）
             if phase == .found, offDuration >= HuntTuning.foundReleaseDuration {
                 phase = .searching
                 foundHSV = nil
