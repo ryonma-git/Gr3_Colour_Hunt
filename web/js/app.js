@@ -1,12 +1,20 @@
 // Color Hunt Web — 画面の行き来と、カメラ・判定・保存・共有のつなぎ。
-// Swift 版の RootView / HuntView にあたる。
 //
 // 大事な考え方:
-// これは「カメラが物の色を教えるアプリ」ではない。
-// 児童が先に「これは青だと思う」と考えてカメラを向け、
+// アプリは物の色を教えない。児童が「これは青だと思う」と考えてカメラを向け、
 // アプリは指定された色の範囲に入っているかを確かめるだけ。判断するのは児童。
+//
+// 2026-09 簡略版の方針:
+//   子どもだけで使えるように、余計な確認と選択肢をなくした。
+//   シャッターを押したら確認画面を出さずに自動で保存し、そのまま探索へ戻る。
+//     SOLO … 次の色へ（色名を大きく出して読み上げる）
+//     TEAM … 同じ色のまま Found +1
+//   ロイロノートへの送信は MY COLORS / RESULT の写真から行う。
 
-import { COLOR_PROFILES, TUNING, profileById, randomHuntColor } from './colors.js';
+import {
+  COLOR_PROFILES, TEAM_ASSIGNMENTS, TEAM_DURATION, TEAM_WARNING,
+  profileById, randomHuntColor, teamProfile, readableColor
+} from './colors.js';
 import { Detector } from './detector.js';
 import { Camera } from './camera.js';
 import { speak, primeSpeech } from './speech.js';
@@ -19,32 +27,29 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 // ---------------------------------------------------------------- 状態
 let detector = null;
 let camera = null;
-let currentScreen = 'home';
-let pending = null;        // 撮影したがまだ保存していない1枚
-let savedRecord = null;    // 保存した1枚
-let detailRecord = null;
+let mode = 'solo';           // 'solo' | 'team'
+let team = null;             // { number, profile, captureIDs, timingStartedAt, timeUp }
+let teamTimer = null;
 let countdownToken = 0;
+let isCapturing = false;
 let objectURLs = [];
 let audioCtx = null;
+let detailRecord = null;
+let viewer = { list: [], index: 0, profile: null };
 
 // ---------------------------------------------------------------- 画面
-const SCREENS = ['home', 'hunt', 'preview', 'gallery', 'detail'];
+const SCREENS = ['home', 'team', 'hunt', 'result', 'viewer', 'gallery', 'detail'];
+let currentScreen = 'home';
 
 function showScreen(name) {
   SCREENS.forEach((s) => $('screen-' + s).classList.toggle('is-active', s === name));
   currentScreen = name;
 }
 
-function trackURL(url) {
-  objectURLs.push(url);
-  return url;
-}
-function releaseURLs() {
-  objectURLs.forEach((u) => URL.revokeObjectURL(u));
-  objectURLs = [];
-}
+function trackURL(url) { objectURLs.push(url); return url; }
+function releaseURLs() { objectURLs.forEach((u) => URL.revokeObjectURL(u)); objectURLs = []; }
 
-// ---------------------------------------------------------------- 音
+// ---------------------------------------------------------------- 音（控えめに）
 function primeAudio() {
   if (audioCtx) return;
   try {
@@ -63,16 +68,21 @@ function playSuccessCue() {
     osc.type = 'sine';
     osc.frequency.value = 880;
     gain.gain.setValueAtTime(0.0001, audioCtx.currentTime);
-    gain.gain.exponentialRampToValueAtTime(0.18, audioCtx.currentTime + 0.01);
-    gain.gain.exponentialRampToValueAtTime(0.0001, audioCtx.currentTime + 0.18);
+    gain.gain.exponentialRampToValueAtTime(0.14, audioCtx.currentTime + 0.01);
+    gain.gain.exponentialRampToValueAtTime(0.0001, audioCtx.currentTime + 0.16);
     osc.connect(gain).connect(audioCtx.destination);
     osc.start();
-    osc.stop(audioCtx.currentTime + 0.2);
+    osc.stop(audioCtx.currentTime + 0.18);
   } catch (e) { /* 無視 */ }
 }
 
-// ---------------------------------------------------------------- 判定の見た目
+// ---------------------------------------------------------------- さがす画面の見た目
 let lastPhase = 'searching';
+
+function canShoot() {
+  return detector.phase === 'found' && camera && camera.isRunning && !isCapturing &&
+    !(team && team.timeUp);
+}
 
 function updateHuntUI() {
   if (!detector) return;
@@ -86,18 +96,28 @@ function updateHuntUI() {
   reticle.classList.toggle('is-matching', !found && detector.isMatchingNow);
 
   $('status-line').textContent = found ? 'しゃしんを とろう' : 'まん中に あわせてね';
-  $('btn-shutter').disabled = !(found && camera && camera.isRunning);
+  $('btn-shutter').disabled = !canShoot();
 
   if (found && lastPhase !== 'found') playSuccessCue();
   lastPhase = detector.phase;
+
+  // SOLO / TEAM で上の表示を切りかえる
+  const isTeam = mode === 'team' && team;
+  $('btn-hunt-close').classList.toggle('hidden', !!isTeam);
+  $('btn-finish').classList.toggle('hidden', !isTeam);
+  $('team-badge').classList.toggle('hidden', !isTeam);
+  $('team-status').classList.toggle('hidden', !isTeam);
+  if (isTeam) {
+    $('team-badge').textContent = 'TEAM ' + team.number;
+    $('team-found').textContent = String(team.captureIDs.length);
+  }
 
   const panel = $('debug-panel');
   if (detector.isDebugEnabled) {
     const h = detector.debugHSV;
     panel.textContent = h
       ? 'H: ' + h.h.toFixed(1) + '  S: ' + h.s.toFixed(2) + '  V: ' + h.v.toFixed(2) +
-        '\nmatched: ' + (detector.phase === 'found' || detector.isMatchingNow) +
-        '\ntarget: ' + p.displayName
+        '\nmatched: ' + (found || detector.isMatchingNow) + '\ntarget: ' + p.displayName
       : 'no sample';
     panel.classList.remove('hidden');
   } else {
@@ -111,9 +131,8 @@ async function runCountdown() {
   detector.pause();
   // あたらしい色になったら、まず英語で1回読み上げる（聞く → さがす）
   speak(detector.activeProfile.speechText);
-  const el = $('countdown');
   $('countdown-color').textContent = detector.activeProfile.displayName;
-  el.classList.remove('hidden');
+  $('countdown').classList.remove('hidden');
 
   for (const n of [3, 2, 1]) {
     if (token !== countdownToken) return;
@@ -125,8 +144,10 @@ async function runCountdown() {
     await sleep(700);
   }
   if (token !== countdownToken) return;
-  el.classList.add('hidden');
+  $('countdown').classList.add('hidden');
   detector.resume();
+  // TEAM は 3・2・1 が終わってから5分を数え始める
+  if (mode === 'team' && team && !team.timingStartedAt) startTeamTimer();
   updateHuntUI();
 }
 
@@ -138,10 +159,7 @@ function cancelCountdown() {
 // ---------------------------------------------------------------- カメラ
 function showCameraMessage(text) {
   const el = $('camera-message');
-  if (!text) {
-    el.classList.add('hidden');
-    return;
-  }
+  if (!text) { el.classList.add('hidden'); return; }
   el.textContent = text;
   el.classList.remove('hidden');
 }
@@ -150,18 +168,17 @@ async function startCamera() {
   showCameraMessage(null);
   $('permission-panel').classList.add('hidden');
   const ok = await camera.start();
-  if (!ok) {
-    $('permission-panel').classList.remove('hidden');
-  }
+  if (!ok) $('permission-panel').classList.remove('hidden');
   updateHuntUI();
   return ok;
 }
 
-// ---------------------------------------------------------------- 遷移
-async function enterHuntWithNewColor() {
-  // ここはタップの直後（await より前）。iOS の音の制限をここで解いておく。
+// ---------------------------------------------------------------- SOLO
+async function startSolo() {
   primeAudio();
-  primeSpeech();
+  primeSpeech();                // iOS: タップの直後に解錠しておく
+  mode = 'solo';
+  team = null;
   detector.pickNextColor();
   showScreen('hunt');
   updateHuntUI();
@@ -169,22 +186,199 @@ async function enterHuntWithNewColor() {
   if (ok) runCountdown();
 }
 
-function leaveHunt() {
-  cancelCountdown();
-  camera.stop();
-  detector.reset();
-  clearPending();
-  showScreen('home');
-  refreshHomeNote();
+// ---------------------------------------------------------------- TEAM
+function buildTeamGrid() {
+  const grid = $('team-grid');
+  grid.innerHTML = '';
+  TEAM_ASSIGNMENTS.forEach((a) => {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.className = 'team-card';
+    b.setAttribute('aria-label', 'チーム ' + a.teamNumber);
+    b.innerHTML = '<small>TEAM</small><span>' + a.teamNumber + '</span>';
+    b.addEventListener('click', () => startTeam(a.teamNumber));
+    grid.appendChild(b);
+  });
 }
 
-function clearPending() {
-  if (pending && pending.url) URL.revokeObjectURL(pending.url);
-  pending = null;
-  savedRecord = null;
-  $('preview-actions').classList.remove('hidden');
-  $('saved-actions').classList.add('hidden');
-  $('preview-message').classList.add('hidden');
+async function startTeam(number) {
+  primeAudio();
+  primeSpeech();
+  const profile = teamProfile(number);
+  if (!profile) return;
+  mode = 'team';
+  team = { number, profile, captureIDs: [], timingStartedAt: null, timeUp: false };
+  stopTeamTimer();
+  setTimerText(TEAM_DURATION);
+  detector.activeProfile = profile;
+  detector.reset();
+  showScreen('hunt');
+  updateHuntUI();
+  const ok = await startCamera();
+  if (ok) runCountdown();   // 色名を大きく出して読み上げる（確認画面は出さない）
+}
+
+function setTimerText(sec) {
+  const s = Math.max(0, Math.ceil(sec));
+  const el = $('team-timer');
+  el.textContent = Math.floor(s / 60) + ':' + String(s % 60).padStart(2, '0');
+  el.classList.toggle('is-warning', s <= TEAM_WARNING && s > 0);
+}
+
+function startTeamTimer() {
+  team.timingStartedAt = Date.now();
+  stopTeamTimer();
+  teamTimer = setInterval(() => {
+    if (!team) return stopTeamTimer();
+    const left = TEAM_DURATION - (Date.now() - team.timingStartedAt) / 1000;
+    setTimerText(left);
+    if (left <= 0 && !team.timeUp) onTimeUp();
+  }, 250);
+}
+
+function stopTeamTimer() {
+  if (teamTimer) clearInterval(teamTimer);
+  teamTimer = null;
+}
+
+async function onTimeUp() {
+  team.timeUp = true;
+  stopTeamTimer();
+  updateHuntUI();
+  // 保存の途中なら終わるまで待つ（データを壊さない）
+  while (isCapturing) await sleep(100);
+  $('timesup-sub').textContent = 'Found ' + team.captureIDs.length;
+  $('timesup').classList.remove('hidden');
+  await sleep(1800);
+  finishTeam();
+}
+
+function finishTeam() {
+  if (!team) return;
+  stopTeamTimer();
+  cancelCountdown();
+  camera.stop();
+  $('timesup').classList.add('hidden');
+  $('finish-confirm').classList.add('hidden');
+  showResult();
+}
+
+// ---------------------------------------------------------------- 撮影 → 自動保存
+async function shoot() {
+  if (!canShoot()) return;
+  isCapturing = true;
+  updateHuntUI();
+  try {
+    const profile = detector.activeProfile;
+    const hsv = detector.foundHSV;
+    const blob = await camera.capturePhoto();
+    const rec = await saveCapture({
+      blob, profile, hsv,
+      mode, teamNumber: team ? team.number : null
+    });
+    if (team) team.captureIDs.push(rec.id);
+    await flashSaved(blob);
+  } catch (e) {
+    showCameraMessage('しゃしんを ほぞん できませんでした。もういちど とってね');
+    isCapturing = false;
+    updateHuntUI();
+    return;
+  }
+  isCapturing = false;
+
+  if (mode === 'team') {
+    if (team && team.timeUp) return;     // onTimeUp が結果へ進める
+    detector.reset();                    // 同じ色を、もう一度さがす
+    detector.resume();
+    updateHuntUI();
+  } else {
+    detector.pickNextColor();            // SOLO は次の色へ
+    updateHuntUI();
+    runCountdown();
+  }
+}
+
+async function flashSaved(blob) {
+  const url = URL.createObjectURL(blob);
+  $('saved-image').src = url;
+  $('saved-flash').classList.remove('hidden');
+  detector.pause();
+  await sleep(1200);
+  $('saved-flash').classList.add('hidden');
+  URL.revokeObjectURL(url);
+}
+
+function leaveHuntToHome() {
+  cancelCountdown();
+  stopTeamTimer();
+  camera.stop();
+  detector.reset();
+  team = null;
+  mode = 'solo';
+  showScreen('home');
+}
+
+// ---------------------------------------------------------------- RESULT
+async function showResult() {
+  releaseURLs();
+  const all = await allCaptures();
+  const byId = new Map(all.map((c) => [c.id, c]));
+  const list = team.captureIDs.map((id) => byId.get(id)).filter(Boolean);
+  const p = team.profile;
+
+  $('result-team').textContent = 'TEAM ' + team.number;
+  $('result-color').textContent = p.displayName;
+  $('result-color').style.color = readableColor(p);
+  $('result-swatch').style.background = p.tint;
+  $('result-count').textContent = String(list.length);
+
+  const grid = $('result-grid');
+  grid.innerHTML = '';
+  if (list.length === 0) {
+    const e = document.createElement('div');
+    e.className = 'result-empty';
+    e.textContent = 'しゃしんは ありません';
+    grid.appendChild(e);
+  }
+  list.forEach((c, i) => {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.className = 'thumb';
+    b.setAttribute('aria-label', (i + 1) + 'まいめの しゃしん');
+    const img = document.createElement('img');
+    img.src = trackURL(URL.createObjectURL(c.blob));
+    img.alt = '';
+    b.appendChild(img);
+    b.addEventListener('click', () => openViewer(list, i, p));
+    grid.appendChild(b);
+  });
+  showScreen('result');
+}
+
+// ---------------------------------------------------------------- 写真を大きく（スワイプで前後）
+function openViewer(list, index, profile) {
+  viewer = { list, index, profile };
+  $('viewer-color').textContent = profile.displayName;
+  $('viewer-color').style.color = readableColor(profile);
+  renderViewer();
+  showScreen('viewer');
+}
+
+function renderViewer() {
+  const { list, index } = viewer;
+  const c = list[index];
+  if (!c) return;
+  $('viewer-image').src = trackURL(URL.createObjectURL(c.blob));
+  $('viewer-index').textContent = (index + 1) + ' / ' + list.length;
+  $('btn-prev').disabled = index <= 0;
+  $('btn-next').disabled = index >= list.length - 1;
+}
+
+function moveViewer(step) {
+  const next = viewer.index + step;
+  if (next < 0 || next >= viewer.list.length) return;
+  viewer.index = next;
+  renderViewer();
 }
 
 // ---------------------------------------------------------------- MY COLORS
@@ -197,30 +391,22 @@ async function openGallery() {
   if (list.length === 0) {
     const empty = document.createElement('div');
     empty.className = 'gallery-empty';
-    empty.innerHTML = '<p class="big">まだ しゃしんが ありません</p><p>START から いろを さがしてみよう</p>';
+    empty.innerHTML = '<p class="big">まだ しゃしんが ありません</p>';
     body.appendChild(empty);
   } else {
     const known = COLOR_PROFILES.map((p) => p.id);
     const sections = COLOR_PROFILES.map((p) => ({
-      title: p.displayName, tint: p.tint,
-      items: list.filter((c) => c.targetColor === p.id)
+      title: p.displayName, tint: p.tint, items: list.filter((c) => c.targetColor === p.id)
     }));
-    sections.push({
-      title: 'OTHER', tint: '#737376',
-      items: list.filter((c) => !known.includes(c.targetColor))
-    });
+    sections.push({ title: 'OTHER', tint: '#737376', items: list.filter((c) => !known.includes(c.targetColor)) });
 
     sections.filter((s) => s.items.length > 0).forEach((s) => {
       const sec = document.createElement('section');
       sec.className = 'color-section';
-      const head = document.createElement('div');
-      head.className = 'color-section-head';
-      head.innerHTML =
-        '<span class="color-dot" style="background:' + s.tint + '"></span>' +
-        '<span class="color-name">' + s.title + '</span>' +
-        '<span class="color-count">' + s.items.length + '</span>';
-      sec.appendChild(head);
-
+      sec.innerHTML =
+        '<div class="color-section-head"><span class="color-dot" style="background:' + s.tint +
+        '"></span><span class="color-name">' + s.title + '</span><span class="color-count">' +
+        s.items.length + '</span></div>';
       const grid = document.createElement('div');
       grid.className = 'color-grid';
       s.items.forEach((c) => {
@@ -247,14 +433,12 @@ async function openDetail(id) {
   detailRecord = rec;
   $('detail-color').textContent = rec.displayName;
   $('detail-image').src = trackURL(URL.createObjectURL(rec.blob));
-  const d = new Date(rec.capturedAt);
-  $('detail-date').textContent = d.toLocaleString('ja-JP', {
+  $('detail-date').textContent = new Date(rec.capturedAt).toLocaleString('ja-JP', {
     year: 'numeric', month: 'long', day: 'numeric', hour: '2-digit', minute: '2-digit'
   });
   showScreen('detail');
 }
 
-// ---------------------------------------------------------------- 共有
 async function doShare(record) {
   const profile = profileById(record.targetColor);
   const result = await shareCapture(record, profile);
@@ -264,91 +448,55 @@ async function doShare(record) {
   }
 }
 
-// ---------------------------------------------------------------- ホームの案内
-async function refreshHomeNote() {
-  const list = await allCaptures();
-  const note = $('home-note');
-  note.textContent =
-    list.length === 0
-      ? 'しゃしんは この iPad の ブラウザに ほぞんされます'
-      : 'ほぞん ずみ: ' + list.length + 'まい（この iPad の ブラウザの中）';
-  note.classList.remove('warn');
-}
-
-// ---------------------------------------------------------------- 起動
+// ---------------------------------------------------------------- イベント
 function wireEvents() {
-  // HOME
-  $('btn-start').addEventListener('click', enterHuntWithNewColor);
+  $('btn-solo').addEventListener('click', startSolo);
+  $('btn-team').addEventListener('click', () => { buildTeamGrid(); showScreen('team'); });
+  $('btn-team-back').addEventListener('click', () => showScreen('home'));
   $('btn-home-gallery').addEventListener('click', openGallery);
 
-  // HUNT
-  $('btn-hunt-close').addEventListener('click', leaveHunt);
-  $('btn-hunt-gallery').addEventListener('click', openGallery);
+  $('btn-hunt-close').addEventListener('click', leaveHuntToHome);
   $('target-word').addEventListener('click', () => speak(detector.activeProfile.speechText));
-  $('btn-retry-camera').addEventListener('click', startCamera);
-  $('btn-permission-home').addEventListener('click', leaveHunt);
-
-  $('btn-shutter').addEventListener('click', async () => {
-    if (!detector || detector.phase !== 'found') return;
-    $('btn-shutter').disabled = true;
-    try {
-      const blob = await camera.capturePhoto();
-      pending = {
-        blob,
-        url: URL.createObjectURL(blob),
-        profile: detector.activeProfile,
-        hsv: detector.foundHSV
-      };
-      $('preview-color').textContent = pending.profile.displayName;
-      $('preview-image').src = pending.url;
-      detector.pause();
-      showScreen('preview');
-    } catch (e) {
-      showCameraMessage('しゃしんを とれませんでした。もういちど ためしてください。');
-      updateHuntUI();
-    }
+  $('btn-shutter').addEventListener('click', shoot);
+  $('btn-retry-camera').addEventListener('click', async () => {
+    const ok = await startCamera();
+    if (ok) runCountdown();
   });
+  $('btn-permission-home').addEventListener('click', leaveHuntToHome);
 
-  // 撮影後
-  $('btn-retake').addEventListener('click', () => {
-    clearPending();
-    showScreen('hunt');
-    detector.resume();      // みつけた状態は保ったままカメラへ戻る
-    updateHuntUI();
-  });
+  // FINISH は確認をはさむ（まちがって押しても消えないように）
+  $('btn-finish').addEventListener('click', () => $('finish-confirm').classList.remove('hidden'));
+  $('btn-finish-no').addEventListener('click', () => $('finish-confirm').classList.add('hidden'));
+  $('btn-finish-yes').addEventListener('click', finishTeam);
 
-  $('btn-confirm').addEventListener('click', async () => {
-    if (!pending) return;
-    $('btn-confirm').disabled = true;
-    try {
-      savedRecord = await saveCapture({
-        blob: pending.blob, profile: pending.profile, hsv: pending.hsv
-      });
-      $('preview-actions').classList.add('hidden');
-      $('saved-actions').classList.remove('hidden');
-      $('preview-message').classList.add('hidden');
-    } catch (e) {
-      const msg = $('preview-message');
-      msg.textContent = 'ほぞんできませんでした。ブラウザの空き容量を確かめてください。';
-      msg.classList.remove('hidden');
-    } finally {
-      $('btn-confirm').disabled = false;
-    }
-  });
-
-  $('btn-share').addEventListener('click', () => savedRecord && doShare(savedRecord));
-
-  $('btn-next').addEventListener('click', () => {
-    clearPending();
-    enterHuntWithNewColor();   // ★ 色が変わる
-  });
-
-  // MY COLORS
-  $('btn-gallery-close').addEventListener('click', () => {
+  $('btn-result-home').addEventListener('click', () => {
     releaseURLs();
-    showScreen(camera && camera.isRunning ? 'hunt' : 'home');
-    if (!camera || !camera.isRunning) refreshHomeNote();
+    team = null;
+    mode = 'solo';
+    showScreen('home');
   });
+
+  $('btn-viewer-back').addEventListener('click', () => {
+    if (team) { showScreen('result'); } else { openGallery(); }
+  });
+  $('btn-prev').addEventListener('click', () => moveViewer(-1));
+  $('btn-next').addEventListener('click', () => moveViewer(1));
+  $('btn-viewer-share').addEventListener('click', () => {
+    const c = viewer.list[viewer.index];
+    if (c) doShare(c);
+  });
+  // 左右スワイプ
+  let touchX = null;
+  const stage = $('screen-viewer');
+  stage.addEventListener('touchstart', (e) => { touchX = e.touches[0].clientX; }, { passive: true });
+  stage.addEventListener('touchend', (e) => {
+    if (touchX === null) return;
+    const dx = e.changedTouches[0].clientX - touchX;
+    touchX = null;
+    if (Math.abs(dx) > 50) moveViewer(dx < 0 ? 1 : -1);
+  });
+
+  $('btn-gallery-close').addEventListener('click', () => { releaseURLs(); showScreen('home'); });
   $('btn-detail-back').addEventListener('click', openGallery);
   $('btn-detail-share').addEventListener('click', () => detailRecord && doShare(detailRecord));
   $('btn-detail-delete').addEventListener('click', async () => {
@@ -361,8 +509,7 @@ function wireEvents() {
 
   $('btn-export').addEventListener('click', async () => {
     const json = await exportLibraryJSON();
-    const blob = new Blob([json], { type: 'application/json' });
-    const url = URL.createObjectURL(blob);
+    const url = URL.createObjectURL(new Blob([json], { type: 'application/json' }));
     const a = document.createElement('a');
     a.href = url;
     a.download = 'library.json';
@@ -372,31 +519,27 @@ function wireEvents() {
     setTimeout(() => URL.revokeObjectURL(url), 30000);
   });
 
-  // 先生用のかくれた表示（左下すみを1.5秒長おし）
+  // 先生用のかくれた数値表示（左下すみを1.5秒長おし）
   let holdTimer = null;
   const toggle = $('debug-toggle');
-  const startHold = () => {
-    holdTimer = setTimeout(() => {
-      detector.isDebugEnabled = !detector.isDebugEnabled;
-      updateHuntUI();
-    }, 1500);
-  };
   const cancelHold = () => { if (holdTimer) clearTimeout(holdTimer); holdTimer = null; };
-  toggle.addEventListener('pointerdown', startHold);
-  toggle.addEventListener('pointerup', cancelHold);
-  toggle.addEventListener('pointercancel', cancelHold);
-  toggle.addEventListener('pointerleave', cancelHold);
+  toggle.addEventListener('pointerdown', () => {
+    holdTimer = setTimeout(() => { detector.isDebugEnabled = !detector.isDebugEnabled; updateHuntUI(); }, 1500);
+  });
+  ['pointerup', 'pointercancel', 'pointerleave'].forEach((ev) => toggle.addEventListener(ev, cancelHold));
 
-  // 画面を離れたときはカメラを止める
+  // 画面を離れたらカメラを止め、戻ったら再開する
   document.addEventListener('visibilitychange', async () => {
     if (document.hidden) {
       if (camera) camera.stop();
     } else if (currentScreen === 'hunt' && camera && !camera.isRunning) {
       await startCamera();
+      detector.resume();
     }
   });
 }
 
+// ---------------------------------------------------------------- 起動
 function boot() {
   detector = new Detector(randomHuntColor(null), updateHuntUI);
   camera = new Camera($('video'), {
@@ -404,29 +547,18 @@ function boot() {
     onError: (msg) => {
       showCameraMessage(msg);
       $('permission-panel').classList.remove('hidden');
-      $('permission-note').textContent =
-        msg.indexOf('きょか') >= 0
-          ? 'Safari の アドレスバー左の「ぁA」→「Webサイトの設定」→ カメラを「許可」にしてください。'
-          : 'ページを 読みこみ直すと なおることがあります。';
     }
   });
 
   wireEvents();
   updateHuntUI();
-  refreshHomeNote();
 
-  // 検証用フック（Swift 版の harness.sh にあたる）。
-  // URL の末尾に ?debug=1 を付けたときだけ有効。ふだんの授業では何も起きない。
-  //   例: .../index.html?debug=1
-  //   コンソールで __colorHunt.demoFound() と打つと、カメラが無くても
-  //   「みつけた」状態の見た目を確かめられる。
+  // 検証用フック（?debug=1 のときだけ）。カメラが無くても流れを確かめられる。
   if (new URLSearchParams(location.search).has('debug')) {
     window.__colorHunt = {
-      detector,
-      camera,
-      showScreen,
-      runCountdown,
-      /** いま出題されている色ちょうどの色を流し込んで FOUND を再現する */
+      get state() { return { mode, team, currentScreen, isCapturing }; },
+      detector, showScreen, runCountdown, startTeam, finishTeam, onTimeUp,
+      /** 出題中の色ちょうどの色を流して FOUND にする */
       demoFound() {
         const p = detector.activeProfile;
         const r = p.hueRanges[0];
@@ -436,29 +568,28 @@ function boot() {
           v: (p.brightnessRange.lower + p.brightnessRange.upper) / 2
         };
         detector.resume();
-        for (let i = 0; i < 20; i++) detector.ingest(hsv);
         const t0 = performance.now();
-        const timer = setInterval(() => {
-          detector.ingest(hsv);
-          if (performance.now() - t0 > 1500) clearInterval(timer);
-        }, 60);
+        const t = setInterval(() => { detector.ingest(hsv); if (performance.now() - t0 > 900) clearInterval(t); }, 50);
       },
-      /** どの色にも当たらない色を流し込んで、解除されることを確かめる */
-      demoRelease() {
-        const hsv = { h: 0, s: 0.02, v: 0.95 };
-        const t0 = performance.now();
-        const timer = setInterval(() => {
-          detector.ingest(hsv);
-          if (performance.now() - t0 > 1500) clearInterval(timer);
-        }, 60);
+      /** カメラの代わりに合成写真で「撮影 → 自動保存」を1回やる */
+      async demoShoot() {
+        const c = document.createElement('canvas');
+        c.width = 600; c.height = 800;
+        const g = c.getContext('2d');
+        g.fillStyle = '#e8e8e8'; g.fillRect(0, 0, 600, 800);
+        g.fillStyle = detector.activeProfile.tint;
+        g.beginPath(); g.ellipse(300, 380, 180 + Math.random() * 60, 130, 0, 0, Math.PI * 2); g.fill();
+        const blob = await new Promise((r) => c.toBlob(r, 'image/jpeg', 0.85));
+        camera.isRunning = true;
+        camera.capturePhoto = () => Promise.resolve(blob);
+        detector.phase = 'found';
+        await shoot();
       }
     };
   }
 
   if ('serviceWorker' in navigator) {
-    window.addEventListener('load', () => {
-      navigator.serviceWorker.register('./sw.js').catch(() => {});
-    });
+    window.addEventListener('load', () => { navigator.serviceWorker.register('./sw.js').catch(() => {}); });
   }
 }
 

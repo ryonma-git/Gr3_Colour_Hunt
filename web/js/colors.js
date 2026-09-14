@@ -82,6 +82,19 @@ export const COLOR_PROFILES = [
     tint: '#8c4dc7'
   },
   {
+    // TEAM 8 用。ORANGE と色相が同じなので彩度で分ける（Swift 版と同じ数値）。
+    // 注意: 暗めの肌は BROWN の範囲に入る（HSV では分離できない）。
+    id: 'brown',
+    displayName: 'BROWN',
+    speechText: 'Brown',
+    hueRanges: [hue(15, 45)],
+    saturationRange: range(0.38, 0.64),  // 0.65 以上は ORANGE / 0.38 未満は肌
+    brightnessRange: range(0.18, 0.82),
+    difficulty: 'advanced',
+    profileVersion: 1,
+    tint: '#825c36'
+  },
+  {
     // PINK は「赤と同じ色相だが、うすい・明るい」で分ける。
     // 色相だけに頼らない設計の実例。
     id: 'pink',
@@ -100,7 +113,36 @@ export const COLOR_PROFILES = [
  *    例: 最初の授業は3色だけ
  *    export const HUNT_COLOR_IDS = ['red', 'blue', 'yellow'];
  */
-export const HUNT_COLOR_IDS = COLOR_PROFILES.map((p) => p.id);
+export const HUNT_COLOR_IDS = ['red', 'orange', 'yellow', 'green', 'blue', 'purple', 'pink'];
+
+/** ★ TEAM HUNT: 班と担当色（固定・ランダムなし）。Swift 版 TeamHunt.swift と同じ。 */
+export const TEAM_ASSIGNMENTS = [
+  { teamNumber: 1, colorId: 'red' },
+  { teamNumber: 2, colorId: 'blue' },
+  { teamNumber: 3, colorId: 'green' },
+  { teamNumber: 4, colorId: 'yellow' },
+  { teamNumber: 5, colorId: 'orange' },
+  { teamNumber: 6, colorId: 'purple' },
+  { teamNumber: 7, colorId: 'pink' },
+  { teamNumber: 8, colorId: 'brown' }
+];
+
+/** TEAM HUNT の時間（秒） */
+export const TEAM_DURATION = 5 * 60;
+/** 残りがこの秒数以下で色を変えて知らせる（点滅はしない） */
+export const TEAM_WARNING = 30;
+
+export function teamProfile(teamNumber) {
+  const a = TEAM_ASSIGNMENTS.find((t) => t.teamNumber === teamNumber);
+  return a ? COLOR_PROFILES.find((p) => p.id === a.colorId) || null : null;
+}
+
+/** 白い背景に文字として置いても読める色（YELLOW などを暗くする） */
+export function readableColor(profile) {
+  if (profile.id === 'yellow') return '#9a7a00';
+  if (profile.id === 'pink') return '#c73f78';
+  return profile.tint;
+}
 
 /** 判定の広さ以外の調整値 */
 export const TUNING = {

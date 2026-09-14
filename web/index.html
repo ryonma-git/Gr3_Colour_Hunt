@@ -14,48 +14,68 @@
 </head>
 <body>
 
-<!-- ===================== HOME ===================== -->
+<!-- ===================== HOME（えらぶのは2つだけ） ===================== -->
 <section id="screen-home" class="screen is-active screen-light">
   <div class="home-top">
     <h1 class="home-title">COLOR HUNT</h1>
-    <p class="home-tagline">What colour is it?</p>
   </div>
   <div class="home-buttons">
-    <button id="btn-start" class="btn btn-primary" type="button">START</button>
-    <button id="btn-home-gallery" class="btn btn-secondary" type="button">MY COLORS</button>
+    <button id="btn-solo" class="btn btn-mode btn-primary" type="button">
+      <span class="mode-title">SOLO HUNT</span>
+      <span class="mode-sub">ひとりで さがす</span>
+    </button>
+    <button id="btn-team" class="btn btn-mode btn-dark" type="button">
+      <span class="mode-title">TEAM HUNT</span>
+      <span class="mode-sub">はんで さがす・5ふん</span>
+    </button>
+    <p class="home-hint">カメラを きかれたら「許可」を おしてね</p>
   </div>
   <div class="home-foot">
-    <p id="home-note" class="footnote"></p>
+    <button id="btn-home-gallery" class="text-button subtle" type="button">MY COLORS（とった しゃしん）</button>
   </div>
 </section>
 
-<!-- ===================== HUNT ===================== -->
+<!-- ===================== TEAM をえらぶ ===================== -->
+<section id="screen-team" class="screen screen-light">
+  <header class="plain-header">
+    <button id="btn-team-back" class="text-button subtle" type="button">← もどる</button>
+  </header>
+  <h2 class="team-title">Choose your team</h2>
+  <div id="team-grid" class="team-grid"></div>
+</section>
+
+<!-- ===================== さがす（SOLO / TEAM 共通） ===================== -->
 <section id="screen-hunt" class="screen screen-camera">
   <video id="video" class="camera-video" playsinline muted autoplay></video>
 
-  <!-- まん中のターゲット（画面の中心＝映像の中心） -->
   <div class="reticle" id="reticle">
-    <div class="reticle-badge" id="reticle-badge" aria-hidden="true">
+    <div class="reticle-badge" aria-hidden="true">
       <svg viewBox="0 0 24 24" width="46" height="46"><path fill="#fff" d="M9.3 17.3 4 12l1.6-1.6 3.7 3.7L18.4 5l1.6 1.6z"/></svg>
     </div>
-    <div class="reticle-ring" id="reticle-ring"></div>
-    <div class="reticle-dot" id="reticle-dot"></div>
+    <div class="reticle-ring"></div>
+    <div class="reticle-dot"></div>
     <div class="reticle-found" id="reticle-found">You found RED!</div>
   </div>
 
-  <!-- 上下のUI -->
   <div class="hunt-ui">
     <div class="hunt-top">
       <button id="btn-hunt-close" class="icon-button" type="button" aria-label="ホームに もどる">
         <svg viewBox="0 0 24 24" width="22" height="22"><path fill="#fff" d="M18.3 5.7 12 12l6.3 6.3-1.4 1.4L10.6 13.4 4.3 19.7 2.9 18.3 9.2 12 2.9 5.7 4.3 4.3l6.3 6.3 6.3-6.3z"/></svg>
       </button>
-      <button id="btn-hunt-gallery" class="pill-button" type="button">MY COLORS</button>
+      <button id="btn-finish" class="pill-button hidden" type="button">FINISH</button>
+      <span class="hunt-top-spacer"></span>
+      <span id="team-badge" class="pill-label hidden">TEAM 1</span>
     </div>
 
     <button id="target-word" class="target-word" type="button" aria-label="いろの なまえ。タップすると えいごで よみます">
       <span id="target-name">RED</span>
       <svg viewBox="0 0 24 24" width="32" height="32" aria-hidden="true"><path fill="#fff" fill-opacity=".9" d="M3 9v6h4l5 5V4L7 9H3zm13.5 3a4.5 4.5 0 0 0-2.5-4v8a4.5 4.5 0 0 0 2.5-4zM14 2.2v2.1a7.7 7.7 0 0 1 0 15.4v2.1a9.8 9.8 0 0 0 0-19.6z"/></svg>
     </button>
+
+    <div id="team-status" class="team-status hidden">
+      <span class="team-timer" id="team-timer">5:00</span>
+      <span class="team-found">✓ Found <b id="team-found">0</b></span>
+    </div>
 
     <div class="hunt-spacer"></div>
 
@@ -72,37 +92,70 @@
     <div id="countdown-number" class="countdown-number">3</div>
   </div>
 
+  <!-- 撮ったら確認画面を出さず、ここで一瞬知らせてすぐ探索へ戻る -->
+  <div id="saved-flash" class="saved-flash hidden">
+    <img id="saved-image" class="saved-image" alt="">
+    <div class="saved-label">✓ ほぞんしました</div>
+  </div>
+
+  <!-- TIME'S UP -->
+  <div id="timesup" class="timesup hidden">
+    <div class="timesup-title">TIME'S UP!</div>
+    <div class="timesup-sub" id="timesup-sub">Found 0</div>
+  </div>
+
+  <!-- FINISH の確認（2択だけ） -->
+  <div id="finish-confirm" class="modal hidden">
+    <div class="modal-card">
+      <p class="modal-title">Finish Team Hunt?</p>
+      <button id="btn-finish-yes" class="btn btn-primary" type="button">Finish</button>
+      <button id="btn-finish-no" class="btn btn-secondary" type="button">Cancel</button>
+    </div>
+  </div>
+
   <!-- カメラが使えないとき -->
   <div id="permission-panel" class="permission-panel hidden">
-    <p class="permission-title">カメラを つかうために<br>きょかが ひつようです</p>
-    <p class="permission-note" id="permission-note">
-      Safari の アドレスバー左の「ぁA」→「Webサイトの設定」→ カメラを「許可」にしてください。
-    </p>
+    <p class="permission-title">カメラが つかえません<br>せんせいを よんでね</p>
+    <div class="teacher-note">
+      <b>先生へ</b><br>
+      ページを再読み込みすると、もう一度カメラの許可を聞かれます。<br>
+      出ない場合: Safari のアドレスバー左の「ぁA」→「Webサイトの設定」→ カメラ →「許可」
+    </div>
     <button id="btn-retry-camera" class="btn btn-primary" type="button">もういちど ためす</button>
     <button id="btn-permission-home" class="btn btn-secondary" type="button">ホームに もどる</button>
   </div>
 
-  <!-- 先生用のかくれた数値表示（左下すみを1.5秒長押し） -->
   <div id="debug-toggle" class="debug-toggle"></div>
   <div id="debug-panel" class="debug-panel hidden"></div>
 </section>
 
-<!-- ===================== 撮影後の確認 ===================== -->
-<section id="screen-preview" class="screen screen-dark">
-  <h2 id="preview-color" class="preview-color">RED</h2>
-  <div class="preview-image-wrap">
-    <img id="preview-image" class="preview-image" alt="">
+<!-- ===================== RESULT（大画面に映す前提） ===================== -->
+<section id="screen-result" class="screen screen-light">
+  <div class="result-head">
+    <div class="result-team" id="result-team">TEAM 1</div>
+    <div class="result-color"><span class="result-swatch" id="result-swatch"></span><span id="result-color">RED</span></div>
+    <div class="result-count" id="result-count">0</div>
+    <div class="result-found">FOUND</div>
   </div>
-  <p id="preview-message" class="preview-message hidden"></p>
-  <div id="preview-actions" class="preview-actions">
-    <button id="btn-confirm" class="btn btn-primary" type="button">この しゃしんに する</button>
-    <button id="btn-retake" class="btn btn-secondary btn-on-dark" type="button">とりなおす</button>
+  <div id="result-grid" class="result-grid"></div>
+  <div class="result-foot">
+    <button id="btn-result-home" class="btn btn-secondary" type="button">ホームに もどる</button>
   </div>
-  <div id="saved-actions" class="preview-actions hidden">
-    <p class="saved-note">ほぞんしました</p>
-    <button id="btn-share" class="btn btn-primary btn-green" type="button">ロイロノートに おくる</button>
-    <button id="btn-next" class="btn btn-secondary btn-on-dark" type="button">つぎを さがす</button>
+</section>
+
+<!-- ===================== 写真を大きく ===================== -->
+<section id="screen-viewer" class="screen screen-light">
+  <header class="plain-header">
+    <button id="btn-viewer-back" class="text-button subtle" type="button">← もどる</button>
+    <button id="btn-viewer-share" class="text-button subtle" type="button">ロイロノートに おくる</button>
+  </header>
+  <div class="viewer-color" id="viewer-color">RED</div>
+  <div class="viewer-stage">
+    <button id="btn-prev" class="viewer-nav" type="button" aria-label="まえの しゃしん">‹</button>
+    <img id="viewer-image" class="viewer-image" alt="">
+    <button id="btn-next" class="viewer-nav" type="button" aria-label="つぎの しゃしん">›</button>
   </div>
+  <div class="viewer-index" id="viewer-index">1 / 1</div>
 </section>
 
 <!-- ===================== MY COLORS ===================== -->
@@ -117,7 +170,7 @@
   </footer>
 </section>
 
-<!-- ===================== 1枚を大きく ===================== -->
+<!-- ===================== 1枚を大きく（MY COLORS から） ===================== -->
 <section id="screen-detail" class="screen screen-light">
   <header class="sheet-header">
     <button id="btn-detail-back" class="text-button" type="button">← もどる</button>

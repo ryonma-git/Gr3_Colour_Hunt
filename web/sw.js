@@ -5,7 +5,7 @@
 // これにより colors.js の判定値を直したら、再読み込みだけで反映される。
 // ネットが無いときだけキャッシュから返す。
 
-const CACHE_NAME = 'colorhunt-v1';
+const CACHE_NAME = 'colorhunt-v3';
 const ASSETS = [
   './',
   './index.html',

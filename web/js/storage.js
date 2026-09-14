@@ -8,7 +8,7 @@
 const DB_NAME = 'colorhunt';
 const DB_VERSION = 1;
 const STORE = 'captures';
-export const SCHEMA_VERSION = 1;
+export const SCHEMA_VERSION = 2;
 
 let dbPromise = null;
 
@@ -44,7 +44,7 @@ function uuid() {
 }
 
 /** 「この しゃしんに する」で呼ばれる。正式保存。 */
-export async function saveCapture({ blob, profile, hsv }) {
+export async function saveCapture({ blob, profile, hsv, mode = 'solo', teamNumber = null }) {
   const id = uuid();
   const record = {
     id,
@@ -57,6 +57,8 @@ export async function saveCapture({ blob, profile, hsv }) {
     sampledHSV: hsv
       ? { h: Number(hsv.h.toFixed(2)), s: Number(hsv.s.toFixed(3)), v: Number(hsv.v.toFixed(3)) }
       : { h: 0, s: 0, v: 0 },
+    mode,
+    teamNumber,
     blob
   };
   const store = await tx('readwrite');
@@ -108,7 +110,9 @@ export async function exportLibraryJSON() {
     capturedAt: c.capturedAt,
     difficulty: c.difficulty,
     colorProfileVersion: c.colorProfileVersion,
-    sampledHSV: c.sampledHSV
+    sampledHSV: c.sampledHSV,
+    mode: c.mode || 'solo',
+    teamNumber: c.teamNumber == null ? null : c.teamNumber
   }));
   return JSON.stringify({ schemaVersion: SCHEMA_VERSION, captures }, null, 2);
 }
