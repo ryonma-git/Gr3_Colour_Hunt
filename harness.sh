@@ -222,7 +222,7 @@ struct HarnessContainer: View {
     @ViewBuilder
     private var teamSelectFlow: some View {
         if let team = selectedTeam, let profile = TeamHuntConfiguration.profile(for: team) {
-            SetupView(mode: .team, teamNumber: team, profile: profile,
+            SetupView(mode: .team, teamNumber: team,
                       onStart: { _, _ in exit() },
                       onBack: { selectedTeam = nil })
         } else {
@@ -235,8 +235,8 @@ struct HarnessContainer: View {
     private var teamReadyFlow: some View {
         if startedTeamHunt {
             TeamHarnessHunt(onExit: exit, onGallery: { showGallery = true })
-        } else if let profile = TeamHuntConfiguration.profile(for: HarnessTeam.number) {
-            SetupView(mode: .team, teamNumber: HarnessTeam.number, profile: profile,
+        } else if TeamHuntConfiguration.profile(for: HarnessTeam.number) != nil {
+            SetupView(mode: .team, teamNumber: HarnessTeam.number,
                       onStart: { _, _ in startedTeamHunt = true },
                       onBack: exit)
         } else {

@@ -460,14 +460,13 @@ body {
 /* ---------- はじめる前（SOLO / TEAM 共通） ---------- */
 #screen-setup { padding: calc(var(--safe-t) + 6px) 24px calc(var(--safe-b) + 14px); overflow-y: auto; }
 .setup-title { margin: 2px 0 14px; text-align: center; font-size: clamp(34px, 7vw, 46px); font-weight: 800; }
-.setup-color {
-  display: flex; flex-direction: column; align-items: center; gap: 6px;
+.setup-note {
   width: 100%; max-width: 460px; margin: 0 auto 18px;
-  border: none; background: none; font-family: inherit; cursor: pointer;
+  padding: 18px 16px; border-radius: 20px;
+  background: rgba(28, 28, 30, .05);
+  text-align: center; font-size: 22px; font-weight: 800; line-height: 1.5;
+  color: var(--subtle);
 }
-.setup-swatch { width: 74px; height: 74px; border-radius: 18px; border: 2px solid rgba(28, 28, 30, .18); }
-.setup-color-name { font-size: clamp(42px, 11vw, 58px); font-weight: 800; line-height: 1.1; }
-.setup-color-hint { font-size: 14px; color: var(--subtle); }
 .setup-block { width: 100%; max-width: 460px; margin: 0 auto 16px; }
 .setup-label { margin: 0 0 8px; font-size: 17px; font-weight: 800; color: var(--subtle); }
 .chip-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(76px, 1fr)); gap: 10px; }

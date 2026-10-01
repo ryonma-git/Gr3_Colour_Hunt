@@ -53,13 +53,8 @@
 
   <h2 class="setup-title" id="setup-title">SOLO HUNT</h2>
 
-  <!-- TEAM のときだけ出る: 担当の色 -->
-  <button id="setup-team-color" class="setup-color hidden" type="button"
-          aria-label="いろの なまえ。タップすると えいごで よみます">
-    <span class="setup-swatch" id="setup-swatch"></span>
-    <span class="setup-color-name" id="setup-color-name">RED</span>
-    <span class="setup-color-hint">タップすると えいごで きこえます</span>
-  </button>
+  <!-- TEAM のときだけ出る。担当の色は START まで見せない（えらび直し防止） -->
+  <p id="setup-note" class="setup-note hidden">さがす いろは<br>START の あとに でます</p>
 
   <!-- SOLO のときだけ出る: 難易度（＝いろの かず） -->
   <div id="setup-level-block" class="setup-block">

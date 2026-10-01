@@ -7,14 +7,15 @@ import SwiftUI
 /// 説明してから、みんなで一斉に始められる。
 ///
 ///   SOLO … いろの かず（難易度）と じかん をえらぶ
-///   TEAM … 担当の色をたしかめて、じかん をえらぶ（色は班ごとに固定）
+///   TEAM … じかん をえらぶ
+///
+/// TEAM の担当色は、この画面では見せない。
+/// 先に色が分かると、気にいらない色のときに班をえらび直せてしまうため。
+/// 色は START のあとの 3・2・1 で大きく出し、英語で読み上げる。
 struct SetupView: View {
-    @EnvironmentObject private var speech: SpeechService
-
     let mode: HuntMode
     /// TEAM のときだけ入る
     let teamNumber: Int?
-    let profile: ColorProfile?
     /// (難易度, 制限時間の分。0 は「なし」)
     let onStart: (HuntDifficulty, Int) -> Void
     let onBack: () -> Void
@@ -26,12 +27,10 @@ struct SetupView: View {
 
     init(mode: HuntMode,
          teamNumber: Int? = nil,
-         profile: ColorProfile? = nil,
          onStart: @escaping (HuntDifficulty, Int) -> Void,
          onBack: @escaping () -> Void) {
         self.mode = mode
         self.teamNumber = teamNumber
-        self.profile = profile
         self.onStart = onStart
         self.onBack = onBack
 
@@ -55,7 +54,7 @@ struct SetupView: View {
                         title
 
                         if isTeam {
-                            teamColor
+                            colorIsSecretNote
                         } else {
                             block(label: "いろの かず") { levelChips }
                         }
@@ -99,35 +98,21 @@ struct SetupView: View {
             .minimumScaleFactor(0.5)
     }
 
-    /// TEAM の担当色。タップすると英語で読み上げる。
-    @ViewBuilder
-    private var teamColor: some View {
-        if let profile = profile {
-            Button {
-                Feedback.tap()
-                speech.speak(profile.speechText)
-            } label: {
-                VStack(spacing: 6) {
-                    RoundedRectangle(cornerRadius: 18)
-                        .fill(profile.displayColor)
-                        .frame(width: 74, height: 74)
-                        .overlay(
-                            RoundedRectangle(cornerRadius: 18)
-                                .stroke(Theme.ink.opacity(0.18), lineWidth: 2)
-                        )
-                    Text(profile.displayName)
-                        .font(Theme.display(58))
-                        .foregroundColor(profile.readableColor)
-                        .lineLimit(1)
-                        .minimumScaleFactor(0.4)
-                    Text("タップすると えいごで きこえます")
-                        .font(Theme.label(14))
-                        .foregroundColor(Theme.subtle)
-                }
-            }
-            .buttonStyle(.plain)
-            .accessibilityLabel("たんとうの いろ、\(profile.displayName)。タップすると えいごで よみます")
-        }
+    /// 担当の色は START まで見せない（色を見てから班をえらび直せないように）
+    private var colorIsSecretNote: some View {
+        Text("さがす いろは\nSTART の あとに でます")
+            .font(Theme.label(22))
+            .foregroundColor(Theme.subtle)
+            .multilineTextAlignment(.center)
+            .lineSpacing(4)
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 18)
+            .padding(.horizontal, 16)
+            .background(
+                RoundedRectangle(cornerRadius: 20)
+                    .fill(Theme.ink.opacity(0.05))
+            )
+            .accessibilityLabel("さがす いろは スタートの あとに でます")
     }
 
     // MARK: - えらぶところ
@@ -278,9 +263,8 @@ struct SetupView: View {
     private var summary: String {
         var parts: [String] = []
         if isTeam {
-            var text = "TEAM \(teamNumber ?? 0)"
-            if let profile = profile { text += "：" + profile.displayName }
-            parts.append(text)
+            // 色はここでは出さない
+            parts.append("TEAM \(teamNumber ?? 0)")
         } else {
             parts.append(level.labelWithCount)
         }

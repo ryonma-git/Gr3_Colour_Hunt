@@ -251,8 +251,8 @@ function stepCustom(delta) {
 function setupSummary() {
   const parts = [];
   if (setup.mode === 'team') {
-    const p = teamProfile(setup.teamNumber);
-    parts.push('TEAM ' + setup.teamNumber + (p ? '：' + p.displayName : ''));
+    // 担当の色はここでは出さない（色を見てから班をえらび直せてしまうため）
+    parts.push('TEAM ' + setup.teamNumber);
   } else {
     parts.push(levelLabel(setup.level));
   }
@@ -264,14 +264,8 @@ function renderSetup() {
   const isTeam = setup.mode === 'team';
   $('setup-title').textContent = isTeam ? 'TEAM ' + setup.teamNumber : 'SOLO HUNT';
 
-  // TEAM は担当の色を確認する（タップで英語読み上げ）
-  $('setup-team-color').classList.toggle('hidden', !isTeam);
-  if (isTeam) {
-    const p = teamProfile(setup.teamNumber);
-    $('setup-swatch').style.background = p ? p.tint : '#dcdcdc';
-    $('setup-color-name').textContent = p ? p.displayName : '';
-    $('setup-color-name').style.color = p ? readableColor(p) : '';
-  }
+  // 担当の色は START まで見せない。色は 3・2・1 のときに大きく出て、英語で読み上げる。
+  $('setup-note').classList.toggle('hidden', !isTeam);
 
   // SOLO は いろの かず（難易度）をえらぶ
   $('setup-level-block').classList.toggle('hidden', isTeam);
@@ -654,10 +648,6 @@ function wireEvents() {
 
   // はじめる前の画面
   $('btn-setup-back').addEventListener('click', () => showScreen(setup.mode === 'team' ? 'team' : 'home'));
-  $('setup-team-color').addEventListener('click', () => {
-    const p = teamProfile(setup.teamNumber);
-    if (p) speak(p.speechText);
-  });
   $('btn-time-minus').addEventListener('click', () => stepCustom(-1));
   $('btn-time-plus').addEventListener('click', () => stepCustom(1));
   $('btn-time-custom').addEventListener('click', () => setLimitMin(customDraft));

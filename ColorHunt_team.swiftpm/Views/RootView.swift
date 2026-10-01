@@ -102,11 +102,11 @@ struct RootView: View {
     @ViewBuilder
     private var setupContent: some View {
         if setupMode == .team {
+            // 色は開始前の画面には出さない。START のとき判定へ渡すためにだけ取り出す。
             if let number = pendingTeamNumber,
                let profile = TeamHuntConfiguration.profile(for: number) {
                 SetupView(mode: .team,
                           teamNumber: number,
-                          profile: profile,
                           onStart: { _, minutes in
                               startRun(mode: .team,
                                        teamNumber: number,
