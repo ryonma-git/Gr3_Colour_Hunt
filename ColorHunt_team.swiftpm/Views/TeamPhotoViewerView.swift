@@ -9,12 +9,20 @@ struct TeamPhotoViewerView: View {
     @EnvironmentObject private var storage: StorageService
 
     let captures: [ColorCapture]
-    let profile: ColorProfile
+    /// TEAM は班の担当色。SOLO は写真ごとに色がちがうので nil を渡す。
+    let profile: ColorProfile?
     let startIndex: Int
     let onClose: () -> Void
 
     @State private var index: Int = 0
     @State private var shareItem: ShareItem?
+
+    /// いま見ている写真の色（SOLO は1枚ごとに変わる）
+    private var currentProfile: ColorProfile? {
+        if let profile = profile { return profile }
+        guard index >= 0, index < captures.count else { return nil }
+        return ColorProfile.profile(id: captures[index].targetColor)
+    }
 
     var body: some View {
         ZStack {
@@ -42,19 +50,21 @@ struct TeamPhotoViewerView: View {
                 }
                 .padding(.horizontal, 20)
 
-                HStack(spacing: 12) {
-                    RoundedRectangle(cornerRadius: 8)
-                        .fill(profile.displayColor)
-                        .frame(width: 28, height: 28)
-                        .overlay(
-                            RoundedRectangle(cornerRadius: 8)
-                                .stroke(Theme.ink.opacity(0.18), lineWidth: 2)
-                        )
-                    Text(profile.displayName)
-                        .font(Theme.display(46))
-                        .foregroundColor(profile.readableColor)
-                        .lineLimit(1)
-                        .minimumScaleFactor(0.5)
+                if let shown = currentProfile {
+                    HStack(spacing: 12) {
+                        RoundedRectangle(cornerRadius: 8)
+                            .fill(shown.displayColor)
+                            .frame(width: 28, height: 28)
+                            .overlay(
+                                RoundedRectangle(cornerRadius: 8)
+                                    .stroke(Theme.ink.opacity(0.18), lineWidth: 2)
+                            )
+                        Text(shown.displayName)
+                            .font(Theme.display(46))
+                            .foregroundColor(shown.readableColor)
+                            .lineLimit(1)
+                            .minimumScaleFactor(0.5)
+                    }
                 }
 
                 TabView(selection: $index) {
@@ -87,9 +97,10 @@ struct TeamPhotoViewerView: View {
     private func share() {
         guard index >= 0, index < captures.count else { return }
         let capture = captures[index]
+        let shown = ColorProfile.profile(id: capture.targetColor) ?? profile ?? .red
         let url = ShareService.makeShareURL(for: capture,
                                             imageURL: storage.imageURL(for: capture),
-                                            profile: profile)
+                                            profile: shown)
         shareItem = ShareItem(url: url)
     }
 }

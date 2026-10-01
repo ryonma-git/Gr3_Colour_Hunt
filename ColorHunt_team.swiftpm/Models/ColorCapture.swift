@@ -26,6 +26,18 @@ struct ColorCapture: Identifiable, Codable, Hashable {
     let mode: String?
     /// TEAM HUNT のときの班番号。SOLO では nil。
     let teamNumber: Int?
+
+    // --- schemaVersion 3 で追加。1回の活動（セッション）の情報。
+    //     これも optional なので、古い library.json はそのまま読める。
+
+    /// 同じ活動で撮った写真には同じ id が入る（HuntRun.id）
+    let sessionID: String?
+    /// その活動を始めた時刻
+    let sessionStartedAt: Date?
+    /// SOLO の難易度（HuntDifficulty.id: "easy" / "normal" / "hard"）。TEAM では nil。
+    let level: String?
+    /// 制限時間（秒）。0 は「じかん なし」。古いデータでは nil。
+    let limitSeconds: Double?
 }
 
 extension ColorCapture {
@@ -36,9 +48,9 @@ extension ColorCapture {
 
 /// `library.json` そのもの。
 struct ColorHuntLibrary: Codable {
-    /// 2 = mode / teamNumber を追加した版。
-    /// どちらも optional なので、schemaVersion 1 で書かれたファイルもそのまま読める。
-    static let currentSchemaVersion = 2
+    /// 3 = sessionID / sessionStartedAt / level / limitSeconds を追加した版。
+    /// 追加ぶんはすべて optional なので、schemaVersion 1・2 のファイルもそのまま読める。
+    static let currentSchemaVersion = 3
 
     var schemaVersion: Int
     var captures: [ColorCapture]
@@ -57,11 +69,42 @@ extension ColorCapture {
     }
 }
 
+/// library.json の日時。ミリ秒まで書く。
+///
+/// 秒までしか書かないと、同じ秒に撮った2枚の前後が
+/// 読み込んだあとに分からなくなり、履歴の並びが崩れる。
+/// Web 版（toISOString）もミリ秒まで書くので、形式もそろう。
+enum ColorHuntDate {
+    private static let withMilliseconds: ISO8601DateFormatter = {
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        return formatter
+    }()
+
+    private static let plain: ISO8601DateFormatter = {
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime]
+        return formatter
+    }()
+
+    static func string(from date: Date) -> String {
+        withMilliseconds.string(from: date)
+    }
+
+    /// ミリ秒の無い古いファイルも読めるようにしてある
+    static func date(from text: String) -> Date? {
+        withMilliseconds.date(from: text) ?? plain.date(from: text)
+    }
+}
+
 extension JSONEncoder {
     static func colorHunt() -> JSONEncoder {
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
-        encoder.dateEncodingStrategy = .iso8601
+        encoder.dateEncodingStrategy = .custom { date, encoder in
+            var container = encoder.singleValueContainer()
+            try container.encode(ColorHuntDate.string(from: date))
+        }
         return encoder
     }
 }
@@ -69,7 +112,15 @@ extension JSONEncoder {
 extension JSONDecoder {
     static func colorHunt() -> JSONDecoder {
         let decoder = JSONDecoder()
-        decoder.dateDecodingStrategy = .iso8601
+        decoder.dateDecodingStrategy = .custom { decoder in
+            let container = try decoder.singleValueContainer()
+            let text = try container.decode(String.self)
+            guard let date = ColorHuntDate.date(from: text) else {
+                throw DecodingError.dataCorruptedError(in: container,
+                                                       debugDescription: "日時の形式が読めません: " + text)
+            }
+            return date
+        }
         return decoder
     }
 }

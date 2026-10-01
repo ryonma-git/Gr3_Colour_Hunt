@@ -7,20 +7,20 @@ struct HuntView: View {
     @EnvironmentObject private var camera: CameraService
     @EnvironmentObject private var detector: ColorDetectionService
     @EnvironmentObject private var speech: SpeechService
-    /// TEAM HUNT のときだけ中身が入る。SOLO では isActive == false なので
-    /// 下の分岐がすべて SOLO 側に倒れ、これまでの動きは変わらない。
-    @EnvironmentObject private var teamHunt: TeamHuntService
+    /// いま遊んでいる1回ぶん（SOLO / TEAM 共通）
+    @EnvironmentObject private var hunt: HuntRunService
 
+    /// カメラが使えないときに、結果を出さずホームへ戻る
     let onClose: () -> Void
     let onOpenGallery: () -> Void
-    /// TEAM HUNT の FINISH を押したとき（SOLO では使わない）
-    var onFinishTeamHunt: () -> Void = {}
+    /// FINISH（TEAM）または ×（SOLO）でおわるとき。けっか画面へ進む。
+    var onFinish: () -> Void = {}
 
     @State private var countdown: Int?
     @State private var interfaceOrientation: UIInterfaceOrientation = .portrait
     @State private var showFinishConfirm = false
 
-    private var isTeam: Bool { teamHunt.isActive }
+    private var isTeam: Bool { hunt.isTeam }
 
     private let ringSize: CGFloat = 230
 
@@ -43,17 +43,17 @@ struct HuntView: View {
                 countdownLayer(value)
             }
 
-            if isTeam && teamHunt.isTimeUp {
+            if hunt.isTimeUp {
                 timesUpLayer
             }
 
             debugLayer
         }
-        .confirmationDialog("Finish Team Hunt?",
+        .confirmationDialog("おわりますか？",
                             isPresented: $showFinishConfirm,
                             titleVisibility: .visible) {
-            Button("Finish", role: .destructive) { onFinishTeamHunt() }
-            Button("Cancel", role: .cancel) {}
+            Button("おわる", role: .destructive) { onFinish() }
+            Button("つづける", role: .cancel) {}
         }
         // 色が変わるたび、また許可が下りたときにカウントダウンをやり直す
         .task(id: countdownKey) {
@@ -77,9 +77,9 @@ struct HuntView: View {
         }
         // 保険: カウントダウンが終わったあとに班のセッションが有効になった場合でも
         // 時計が動き出すようにしておく（通常は runCountdown の最後で始まる）
-        .onValueChange(of: teamHunt.isActive) { active in
+        .onValueChange(of: hunt.isActive) { active in
             if active && countdown == nil && camera.authorization == .authorized {
-                teamHunt.beginTiming()
+                hunt.beginTiming()
             }
         }
     }
@@ -177,8 +177,9 @@ struct HuntView: View {
             targetColorButton
                 .padding(.top, 6)
 
-            if isTeam {
-                teamStatusBar
+            // 時計とみつけた数は SOLO でも出す（時計は「じかん なし」のとき隠す）
+            if hunt.isActive {
+                statusBar
                     .padding(.top, 10)
             }
 
@@ -220,9 +221,10 @@ struct HuntView: View {
         .accessibilityHint("タップすると えいごで よみます")
     }
 
+    /// SOLO の「おわる」。あやまって押しても消えないよう、確認をはさむ。
     private var closeButton: some View {
         Button {
-            onClose()
+            showFinishConfirm = true
         } label: {
             Image(systemName: "xmark")
                 .font(.system(size: 22, weight: .bold))
@@ -230,7 +232,7 @@ struct HuntView: View {
                 .frame(width: 52, height: 52)
                 .background(Circle().fill(Color.black.opacity(0.45)))
         }
-        .accessibilityLabel("ホームに もどる")
+        .accessibilityLabel("いろさがしを おわる")
     }
 
     private var galleryButton: some View {
@@ -280,44 +282,46 @@ struct HuntView: View {
     }
 
     private var teamBadge: some View {
-        Text("TEAM \(teamHunt.teamNumber ?? 0)")
+        Text("TEAM \(hunt.teamNumber ?? 0)")
             .font(Theme.label(17))
             .foregroundColor(.white)
             .padding(.horizontal, 16)
             .frame(height: 52)
             .background(Capsule().fill(Color.black.opacity(0.45)))
-            .accessibilityLabel("チーム \(teamHunt.teamNumber ?? 0)")
+            .accessibilityLabel("チーム \(hunt.teamNumber ?? 0)")
     }
 
     /// 残り時間と、みつけた数。時間のほうを大きくして優先度を示す。
-    private var teamStatusBar: some View {
+    private var statusBar: some View {
         HStack(spacing: 14) {
-            HStack(spacing: 7) {
-                Image(systemName: "clock.fill")
-                    .font(.system(size: 20, weight: .bold))
-                Text(teamHunt.remainingText)
-                    .font(.system(size: 40, weight: .heavy, design: .rounded))
-                    .monospacedDigit()
+            if hunt.hasTimeLimit {
+                HStack(spacing: 7) {
+                    Image(systemName: "clock.fill")
+                        .font(.system(size: 20, weight: .bold))
+                    Text(hunt.remainingText)
+                        .font(.system(size: 40, weight: .heavy, design: .rounded))
+                        .monospacedDigit()
+                }
+                .foregroundColor(hunt.isWarning ? Theme.matching : .white)
+                .padding(.horizontal, 18)
+                .padding(.vertical, 6)
+                .background(Capsule().fill(Color.black.opacity(0.45)))
+                .accessibilityLabel("のこり " + hunt.remainingText)
             }
-            .foregroundColor(teamHunt.isWarning ? Theme.matching : .white)
-            .padding(.horizontal, 18)
-            .padding(.vertical, 6)
-            .background(Capsule().fill(Color.black.opacity(0.45)))
-            .accessibilityLabel("のこり " + teamHunt.remainingText)
 
             HStack(spacing: 7) {
                 Image(systemName: "checkmark.circle.fill")
                     .font(.system(size: 18, weight: .bold))
                 Text("Found")
                     .font(Theme.label(17))
-                Text("\(teamHunt.foundCount)")
+                Text("\(hunt.foundCount)")
                     .font(.system(size: 30, weight: .heavy, design: .rounded))
             }
             .foregroundColor(.white)
             .padding(.horizontal, 16)
             .padding(.vertical, 6)
             .background(Capsule().fill(Color.black.opacity(0.45)))
-            .accessibilityLabel("みつけた かず \(teamHunt.foundCount)")
+            .accessibilityLabel("みつけた かず \(hunt.foundCount)")
         }
     }
 
@@ -330,14 +334,14 @@ struct HuntView: View {
                     .foregroundColor(.white)
                     .lineLimit(1)
                     .minimumScaleFactor(0.5)
-                Text("Found \(teamHunt.foundCount)")
+                Text("Found \(hunt.foundCount)")
                     .font(Theme.display(40))
                     .foregroundColor(.white.opacity(0.9))
             }
             .padding(.horizontal, 24)
         }
         .accessibilityElement(children: .combine)
-        .accessibilityLabel("じかんです。\(teamHunt.foundCount)こ みつけました")
+        .accessibilityLabel("じかんです。\(hunt.foundCount)こ みつけました")
     }
 
     // MARK: -
@@ -346,7 +350,7 @@ struct HuntView: View {
         detector.phase == .found
             && !camera.isCapturingPhoto
             && camera.isSessionRunning
-            && !(isTeam && teamHunt.isTimeUp)
+            && !hunt.isTimeUp
     }
 
     private var shutterButton: some View {
@@ -423,10 +427,8 @@ struct HuntView: View {
         }
         countdown = nil
         detector.resume()
-        // 3・2・1 が終わってから5分を数え始める
-        if isTeam {
-            teamHunt.beginTiming()
-        }
+        // 3・2・1 が終わってから、じかんを数え始める（「なし」のときは何も起きない）
+        hunt.beginTiming()
     }
 
     // MARK: - カメラが使えないとき

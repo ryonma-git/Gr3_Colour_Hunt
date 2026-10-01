@@ -26,6 +26,9 @@ final class ColorDetectionService: ObservableObject {
     /// いまさがしている色。将来はここを差し替えるだけで別の色になる。
     @Published var activeProfile: ColorProfile
 
+    /// SOLO で次の色を選ぶ範囲（難易度）。TEAM では使わない。
+    var difficulty: HuntDifficulty = .easy
+
     /// 開発用の数値表示。児童用UIでは必ず false。
     @Published var isDebugEnabled = false
     @Published private(set) var debugHSV: HSVColor?
@@ -47,7 +50,7 @@ final class ColorDetectionService: ObservableObject {
     /// 次にさがす色をランダムに決める。直前と同じ色は出ない。判定もやり直す。
     /// START のときと、「つぎを さがす」を押したときに呼ぶ。
     func pickNextColor() {
-        activeProfile = ColorProfile.randomHuntColor(excluding: activeProfile)
+        activeProfile = ColorProfile.randomHuntColor(excluding: activeProfile, in: difficulty)
         reset()
     }
 

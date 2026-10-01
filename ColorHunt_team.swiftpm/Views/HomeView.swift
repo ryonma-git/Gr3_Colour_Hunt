@@ -53,12 +53,12 @@ struct HomeView: View {
                         onStartTeam()
                     } label: {
                         modeLabel(title: "TEAM HUNT",
-                                  subtitle: "はんで さがす・5ふん",
+                                  subtitle: "はんで さがす",
                                   icon: "person.3.fill")
                     }
                     .buttonStyle(PrimaryButtonStyle(fill: Theme.ink))
                     .accessibilityLabel("チームハント")
-                    .accessibilityHint("はんで 5ふんかん いろさがしを します")
+                    .accessibilityHint("はんで いろさがしを します")
 
                     Text("カメラを きかれたら「OK」を おしてね")
                         .font(Theme.label(16))

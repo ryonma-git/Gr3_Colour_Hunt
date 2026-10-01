@@ -8,12 +8,17 @@
 #
 #   使い方:  ./harness.sh [画面名]
 #
-#   home     ホーム（COLOR HUNT / START / MY COLORS）
-#   setup    保存先をえらぶ画面（シートとして表示）
-#   hunt     さがす画面（3・2・1 → カメラ無しの状態）
-#   found    RED をみつけた状態（合成した赤い色を流し込む）
-#   preview  撮影後の確認画面（合成写真。保存とロイロ共有まで試せる）
-#   gallery  MY COLORS（シートとして表示）
+#   home       ホーム（COLOR HUNT / SOLO / TEAM / MY COLORS）
+#   soloready  SOLO のはじめる前の画面（いろの かず・じかん）
+#   ready      TEAM のはじめる前の画面（担当色・じかん）→ START でさがす画面へ
+#   setup      保存先をえらぶ画面（シートとして表示）
+#   hunt       さがす画面（3・2・1 → カメラ無しの状態）
+#   found      みつけた状態（合成した色を流し込む）
+#   preview    撮影後の確認画面（合成写真。保存とロイロ共有まで試せる）
+#   soloresult SOLO のけっか画面（色をまぜた合成写真で確認）
+#   result     TEAM のけっか画面（teamresult も同じ）
+#   teamphoto  けっかの写真を大きく見る画面
+#   gallery    MY COLORS（1回の活動ごとに並ぶ）
 #
 #   第2引数:
 #   askcam   カメラ許可を「まだ聞いていない」状態にする（予告画面の確認）
@@ -75,7 +80,7 @@ struct HarnessApp: App {
     @StateObject private var camera = CameraService()
     @StateObject private var detector = ColorDetectionService(profile: ColorProfile.randomHuntColor(excluding: nil))
     @StateObject private var speech = SpeechService()
-    @StateObject private var teamHunt = TeamHuntService()
+    @StateObject private var hunt = HuntRunService()
 
     private var screen: String {
         UserDefaults.standard.string(forKey: "harnessScreen") ?? "home"
@@ -88,7 +93,7 @@ struct HarnessApp: App {
                 .environmentObject(camera)
                 .environmentObject(detector)
                 .environmentObject(speech)
-                .environmentObject(teamHunt)
+                .environmentObject(hunt)
                 .preferredColorScheme(.light)
                 .onAppear { storage.bootstrap() }
         }
@@ -151,7 +156,7 @@ struct HarnessContainer: View {
 
     @EnvironmentObject private var storage: StorageService
     @EnvironmentObject private var detector: ColorDetectionService
-    @EnvironmentObject private var teamHunt: TeamHuntService
+    @EnvironmentObject private var hunt: HuntRunService
 
     @State private var exited = false
     @State private var selectedTeam: Int?
@@ -196,14 +201,18 @@ struct HarnessContainer: View {
             HarnessCaptureFlow(onExit: exit, onGallery: { showGallery = true })
         case "teamselect":
             teamSelectFlow
-        case "teamready":
+        case "soloready":
+            SetupView(mode: .solo, onStart: { _, _ in exit() }, onBack: exit)
+        case "teamready", "ready":
             teamReadyFlow
         case "teamhunt":
             TeamHarnessHunt(onExit: exit, onGallery: { showGallery = true })
-        case "teamresult":
-            TeamHarnessResult(openViewer: false, onExit: exit)
+        case "teamresult", "result":
+            TeamHarnessResult(mode: .team, openViewer: false, onExit: exit)
+        case "soloresult":
+            TeamHarnessResult(mode: .solo, openViewer: false, onExit: exit)
         case "teamphoto":
-            TeamHarnessResult(openViewer: true, onExit: exit)
+            TeamHarnessResult(mode: .team, openViewer: true, onExit: exit)
         default:
             RootView()
         }
@@ -213,9 +222,9 @@ struct HarnessContainer: View {
     @ViewBuilder
     private var teamSelectFlow: some View {
         if let team = selectedTeam, let profile = TeamHuntConfiguration.profile(for: team) {
-            TeamReadyView(teamNumber: team, profile: profile,
-                          onStart: exit,
-                          onBack: { selectedTeam = nil })
+            SetupView(mode: .team, teamNumber: team, profile: profile,
+                      onStart: { _, _ in exit() },
+                      onBack: { selectedTeam = nil })
         } else {
             TeamSelectView(onSelect: { selectedTeam = $0 }, onBack: exit)
         }
@@ -227,9 +236,9 @@ struct HarnessContainer: View {
         if startedTeamHunt {
             TeamHarnessHunt(onExit: exit, onGallery: { showGallery = true })
         } else if let profile = TeamHuntConfiguration.profile(for: HarnessTeam.number) {
-            TeamReadyView(teamNumber: HarnessTeam.number, profile: profile,
-                          onStart: { startedTeamHunt = true },
-                          onBack: exit)
+            SetupView(mode: .team, teamNumber: HarnessTeam.number, profile: profile,
+                      onStart: { _, _ in startedTeamHunt = true },
+                      onBack: exit)
         } else {
             Color.clear.onAppear(perform: exit)
         }
@@ -313,13 +322,13 @@ struct TeamHarnessHunt: View {
     let onGallery: () -> Void
 
     @EnvironmentObject private var detector: ColorDetectionService
-    @EnvironmentObject private var teamHunt: TeamHuntService
+    @EnvironmentObject private var hunt: HuntRunService
     @State private var ready = false
 
     var body: some View {
         Group {
             if ready {
-                HuntView(onClose: onExit, onOpenGallery: onGallery, onFinishTeamHunt: onExit)
+                HuntView(onClose: onExit, onOpenGallery: onGallery, onFinish: onExit)
             } else {
                 Color.black.ignoresSafeArea()
             }
@@ -327,7 +336,7 @@ struct TeamHarnessHunt: View {
         .task {
             let team = HarnessTeam.number
             guard let profile = TeamHuntConfiguration.profile(for: team) else { return }
-            teamHunt.start(teamNumber: team, profile: profile)
+            hunt.start(HuntRun(mode: .team, teamNumber: team, profile: profile, limitSeconds: 5 * 60))
             detector.activeProfile = profile
             detector.reset()
             ready = true
@@ -341,26 +350,24 @@ struct TeamHarnessHunt: View {
 
 /// RESULT / 写真の拡大表示（合成写真を実際に保存して本番と同じ経路で出す）
 struct TeamHarnessResult: View {
+    let mode: HuntMode
     let openViewer: Bool
     let onExit: () -> Void
 
     @EnvironmentObject private var storage: StorageService
-    @EnvironmentObject private var teamHunt: TeamHuntService
+    @EnvironmentObject private var hunt: HuntRunService
     @State private var ready = false
 
     var body: some View {
         Group {
-            if ready, let session = teamHunt.session, let profile = session.profile {
+            if ready, let current = hunt.run {
                 if openViewer {
-                    TeamPhotoViewerView(captures: storage.captures(withIDs: session.captureIDs),
-                                        profile: profile,
+                    TeamPhotoViewerView(captures: storage.captures(withIDs: current.captureIDs),
+                                        profile: current.profile,
                                         startIndex: 2,
                                         onClose: onExit)
                 } else {
-                    TeamResultView(teamNumber: session.teamNumber,
-                                   profile: profile,
-                                   captureIDs: session.captureIDs,
-                                   onHome: onExit)
+                    ResultView(run: current, onHome: onExit)
                 }
             } else {
                 Color.clear
@@ -368,19 +375,34 @@ struct TeamHarnessResult: View {
         }
         .task {
             let team = HarnessTeam.number
-            guard !ready, let profile = TeamHuntConfiguration.profile(for: team) else { return }
-            teamHunt.start(teamNumber: team, profile: profile)
-            let first = profile.hueRanges[0]
-            let baseHue = first.from <= first.to ? (first.from + first.to) / 2 : first.from
+            guard !ready, let teamColor = TeamHuntConfiguration.profile(for: team) else { return }
+            let isTeam = mode == .team
+            let level = HuntDifficulty.hard
+            let run = HuntRun(mode: mode,
+                              teamNumber: isTeam ? team : nil,
+                              profile: isTeam ? teamColor : nil,
+                              level: isTeam ? nil : level,
+                              limitSeconds: isTeam ? 5 * 60 : 3 * 60)
+            hunt.start(run)
+            // SOLO は色をまぜて保存する（けっか画面で色名が出ることを確かめる）
+            let colors = isTeam ? [teamColor] : level.colors
             for i in 0..<HarnessTeam.photoCount {
+                let profile = colors[i % colors.count]
+                let first = profile.hueRanges[0]
+                let baseHue = first.from <= first.to ? (first.from + first.to) / 2 : first.from
                 let photo = HarnessApp.makeSamplePhoto(hue: baseHue + Double(i) * 6 - 15, variant: i)
                 if let c = storage.save(photo: photo, profile: profile,
                                         hsv: HSVColor(h: baseHue, s: 0.6, v: 0.5),
-                                        mode: .team, teamNumber: team) {
-                    teamHunt.record(c)
+                                        mode: mode,
+                                        teamNumber: isTeam ? team : nil,
+                                        sessionID: run.id,
+                                        sessionStartedAt: run.startedAt,
+                                        level: run.levelID,
+                                        limitSeconds: run.limitSeconds) {
+                    hunt.record(c)
                 }
             }
-            teamHunt.finish()
+            hunt.finish()
             ready = true
         }
     }

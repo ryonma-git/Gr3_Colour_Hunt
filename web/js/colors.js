@@ -85,19 +85,6 @@ export const COLOR_PROFILES = [
     tint: '#8c4dc7'
   },
   {
-    // TEAM 8 用。ORANGE と色相が同じなので彩度で分ける（Swift 版と同じ数値）。
-    // 注意: 暗めの肌は BROWN の範囲に入る（HSV では分離できない）。
-    id: 'brown',
-    displayName: 'BROWN',
-    speechText: 'Brown',
-    hueRanges: [hue(10, 45)],            // 赤みの茶色も通す
-    saturationRange: range(0.38, 0.70),  // 0.38 未満は肌 / 0.70 より鮮やかなら ORANGE
-    brightnessRange: range(0.18, 0.85),
-    difficulty: 'advanced',
-    profileVersion: 2,
-    tint: '#825c36'
-  },
-  {
     // PINK は2つの範囲の合わせ技。色相だけに頼らない設計の実例。
     //  ① 赤と同じ色相の「うすい赤」（ももいろ）。こい赤は RED なので S は 0.70 まで
     //  ② 赤むらさき寄りの色相の「こいピンク」（ピンクのペンなど）。
@@ -114,14 +101,88 @@ export const COLOR_PROFILES = [
     difficulty: 'basic',
     profileVersion: 2,
     tint: '#f273a6'
+  },
+  {
+    // TEAM 8 用。ORANGE と色相が同じなので彩度で分ける（Swift 版と同じ数値）。
+    // 注意: 暗めの肌は BROWN の範囲に入る（HSV では分離できない）。
+    id: 'brown',
+    displayName: 'BROWN',
+    speechText: 'Brown',
+    hueRanges: [hue(10, 45)],            // 赤みの茶色も通す
+    saturationRange: range(0.38, 0.70),  // 0.38 未満は肌 / 0.70 より鮮やかなら ORANGE
+    brightnessRange: range(0.18, 0.85),
+    difficulty: 'advanced',
+    profileVersion: 2,
+    tint: '#825c36'
+  },
+  // ------------------------------------------------------------------
+  //  BLACK / WHITE / GRAY は「むずかしい」だけで出す色。
+  //  色み（色相）では決まらないので、色相は全部ゆるし、明るさと鮮やかさで分ける。
+  //
+  //  ※ カメラの自動露出は、画面いっぱいの黒も白も「中くらいの明るさ」に
+  //    補正してしまう。近づきすぎず、まわりも一緒に写すと正しく判定できる。
+  // ------------------------------------------------------------------
+  {
+    id: 'black',
+    displayName: 'BLACK',
+    speechText: 'Black',
+    hueRanges: [hue(0, 360)],
+    saturationRange: range(0.0, 0.50),
+    brightnessRange: range(0.0, 0.30),   // 暗いこと が条件
+    difficulty: 'advanced',
+    profileVersion: 1,
+    tint: '#2b2b30'
+  },
+  {
+    id: 'white',
+    displayName: 'WHITE',
+    speechText: 'White',
+    hueRanges: [hue(0, 360)],
+    saturationRange: range(0.0, 0.16),   // 色みが無いこと
+    brightnessRange: range(0.74, 1.0),   // 明るいこと
+    difficulty: 'advanced',
+    profileVersion: 1,
+    tint: '#ffffff'
+  },
+  {
+    id: 'gray',
+    displayName: 'GRAY',
+    speechText: 'Gray',
+    hueRanges: [hue(0, 360)],
+    saturationRange: range(0.0, 0.20),   // 色みが無いこと
+    brightnessRange: range(0.26, 0.78),  // 黒と白の あいだ
+    difficulty: 'advanced',
+    profileVersion: 1,
+    tint: '#8e8e93'
   }
 ];
 
-/** ★ 授業で出題する色。減らせば、その色だけが出る。
- *    例: 最初の授業は3色だけ
- *    export const HUNT_COLOR_IDS = ['red', 'blue', 'yellow'];
+/** ★ 難易度。変わるのは「出題する色の数」だけ。
+ *    かんたん   … 7色（いちばん基本の色）
+ *    ふつう     … 8色（+ BROWN）
+ *    むずかしい … 11色（+ BLACK・WHITE・GRAY）
+ *
+ *  色を減らしたいときは colorIds を書きかえる（例: ['red', 'blue', 'yellow']）。
+ *  TEAM HUNT の色は班ごとに固定なので、難易度の影響を受けない。
  */
-export const HUNT_COLOR_IDS = ['red', 'orange', 'yellow', 'green', 'blue', 'purple', 'pink'];
+const BASIC_7 = ['red', 'orange', 'yellow', 'green', 'blue', 'purple', 'pink'];
+export const DIFFICULTIES = [
+  { id: 'easy', label: 'かんたん', colorIds: BASIC_7 },
+  { id: 'normal', label: 'ふつう', colorIds: BASIC_7.concat(['brown']) },
+  { id: 'hard', label: 'むずかしい', colorIds: BASIC_7.concat(['brown', 'black', 'white', 'gray']) }
+];
+export const DEFAULT_DIFFICULTY = 'easy';
+
+export function difficultyById(id) {
+  return DIFFICULTIES.find((d) => d.id === id) || DIFFICULTIES[0];
+}
+
+/** ★ 時間制限（分）のボタン。0 は「なし」。並び順もこのとおり。 */
+export const TIME_PRESETS_MIN = [0, 1, 2, 3, 5];
+/** 「そのほか」で −／＋ で選べる範囲（分） */
+export const CUSTOM_TIME_RANGE = { min: 1, max: 20 };
+/** はじめて使うときの既定（分） */
+export const DEFAULT_LIMIT_MIN = { solo: 3, team: 5 };
 
 /** ★ TEAM HUNT: 班と担当色（固定・ランダムなし）。Swift 版 TeamHunt.swift と同じ。 */
 export const TEAM_ASSIGNMENTS = [
@@ -135,10 +196,8 @@ export const TEAM_ASSIGNMENTS = [
   { teamNumber: 8, colorId: 'brown' }
 ];
 
-/** TEAM HUNT の時間（秒） */
-export const TEAM_DURATION = 5 * 60;
-/** 残りがこの秒数以下で色を変えて知らせる（点滅はしない） */
-export const TEAM_WARNING = 30;
+/** 残りがこの秒数以下で、時計の色を変えて知らせる（点滅はしない） */
+export const TIME_WARNING = 30;
 
 export function teamProfile(teamNumber) {
   const a = TEAM_ASSIGNMENTS.find((t) => t.teamNumber === teamNumber);
@@ -149,6 +208,7 @@ export function teamProfile(teamNumber) {
 export function readableColor(profile) {
   if (profile.id === 'yellow') return '#9a7a00';
   if (profile.id === 'pink') return '#c73f78';
+  if (profile.id === 'white') return '#8a8a8f';   // 白い背景では見えないので灰色で出す
   return profile.tint;
 }
 
@@ -196,13 +256,14 @@ export function profileById(id) {
   return COLOR_PROFILES.find((p) => p.id === id) || null;
 }
 
-export function huntColors() {
-  return COLOR_PROFILES.filter((p) => HUNT_COLOR_IDS.includes(p.id));
+/** その難易度で出題する色 */
+export function huntColors(difficultyId) {
+  return difficultyById(difficultyId).colorIds.map((id) => profileById(id)).filter(Boolean);
 }
 
 /** 次に出す色をランダムに選ぶ。直前と同じ色は選ばない。 */
-export function randomHuntColor(current) {
-  const all = huntColors();
+export function randomHuntColor(current, difficultyId) {
+  const all = huntColors(difficultyId);
   const pool = all.filter((p) => !current || p.id !== current.id);
   const from = pool.length > 0 ? pool : all;
   return from[Math.floor(Math.random() * from.length)];

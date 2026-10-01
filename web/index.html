@@ -27,7 +27,7 @@
     </button>
     <button id="btn-team" class="btn btn-mode btn-dark" type="button">
       <span class="mode-title">TEAM HUNT</span>
-      <span class="mode-sub">はんで さがす・5ふん</span>
+      <span class="mode-sub">はんで さがす</span>
     </button>
     <p class="home-hint">カメラを きかれたら「許可」を おしてね</p>
   </div>
@@ -43,6 +43,45 @@
   </header>
   <h2 class="team-title">Choose your team</h2>
   <div id="team-grid" class="team-grid"></div>
+</section>
+
+<!-- ===================== はじめる前（SOLO / TEAM 共通） ===================== -->
+<section id="screen-setup" class="screen screen-light">
+  <header class="plain-header">
+    <button id="btn-setup-back" class="text-button subtle" type="button">← もどる</button>
+  </header>
+
+  <h2 class="setup-title" id="setup-title">SOLO HUNT</h2>
+
+  <!-- TEAM のときだけ出る: 担当の色 -->
+  <button id="setup-team-color" class="setup-color hidden" type="button"
+          aria-label="いろの なまえ。タップすると えいごで よみます">
+    <span class="setup-swatch" id="setup-swatch"></span>
+    <span class="setup-color-name" id="setup-color-name">RED</span>
+    <span class="setup-color-hint">タップすると えいごで きこえます</span>
+  </button>
+
+  <!-- SOLO のときだけ出る: 難易度（＝いろの かず） -->
+  <div id="setup-level-block" class="setup-block">
+    <p class="setup-label">いろの かず</p>
+    <div id="setup-levels" class="chip-row"></div>
+  </div>
+
+  <div class="setup-block">
+    <p class="setup-label">じかん</p>
+    <div id="setup-times" class="chip-row"></div>
+    <div class="stepper-row">
+      <span class="stepper-label">そのほか</span>
+      <button id="btn-time-minus" class="stepper-btn" type="button" aria-label="1ぷん みじかく">−</button>
+      <button id="btn-time-custom" class="stepper-value" type="button">10ふん</button>
+      <button id="btn-time-plus" class="stepper-btn" type="button" aria-label="1ぷん ながく">＋</button>
+    </div>
+  </div>
+
+  <div class="setup-foot">
+    <p class="setup-summary" id="setup-summary">かんたん（7いろ）・3ふん</p>
+    <button id="btn-start" class="btn btn-primary btn-start" type="button">START</button>
+  </div>
 </section>
 
 <!-- ===================== さがす（SOLO / TEAM 共通） ===================== -->
@@ -73,9 +112,9 @@
       <svg viewBox="0 0 24 24" width="32" height="32" aria-hidden="true"><path fill="#fff" fill-opacity=".9" d="M3 9v6h4l5 5V4L7 9H3zm13.5 3a4.5 4.5 0 0 0-2.5-4v8a4.5 4.5 0 0 0 2.5-4zM14 2.2v2.1a7.7 7.7 0 0 1 0 15.4v2.1a9.8 9.8 0 0 0 0-19.6z"/></svg>
     </button>
 
-    <div id="team-status" class="team-status hidden">
-      <span class="team-timer" id="team-timer">5:00</span>
-      <span class="team-found">✓ Found <b id="team-found">0</b></span>
+    <div id="hunt-status" class="hunt-status">
+      <span class="hunt-timer" id="hunt-timer">5:00</span>
+      <span class="hunt-found">✓ Found <b id="hunt-found">0</b></span>
     </div>
 
     <div class="hunt-spacer"></div>
@@ -105,12 +144,12 @@
     <div class="timesup-sub" id="timesup-sub">Found 0</div>
   </div>
 
-  <!-- FINISH の確認（2択だけ） -->
+  <!-- おわるときの確認（2択だけ） -->
   <div id="finish-confirm" class="modal hidden">
     <div class="modal-card">
-      <p class="modal-title">Finish Team Hunt?</p>
-      <button id="btn-finish-yes" class="btn btn-primary" type="button">Finish</button>
-      <button id="btn-finish-no" class="btn btn-secondary" type="button">Cancel</button>
+      <p class="modal-title">おわりますか？</p>
+      <button id="btn-finish-yes" class="btn btn-primary" type="button">おわる</button>
+      <button id="btn-finish-no" class="btn btn-secondary" type="button">つづける</button>
     </div>
   </div>
 
@@ -133,8 +172,9 @@
 <!-- ===================== RESULT（大画面に映す前提） ===================== -->
 <section id="screen-result" class="screen screen-light">
   <div class="result-head">
-    <div class="result-team" id="result-team">TEAM 1</div>
-    <div class="result-color"><span class="result-swatch" id="result-swatch"></span><span id="result-color">RED</span></div>
+    <div class="result-team" id="result-title">TEAM 1</div>
+    <div class="result-color" id="result-color-row"><span class="result-swatch" id="result-swatch"></span><span id="result-color">RED</span></div>
+    <div class="result-sub" id="result-sub"></div>
     <div class="result-count" id="result-count">0</div>
     <div class="result-found">FOUND</div>
   </div>

@@ -5,7 +5,7 @@ import SwiftUI
 struct CapturePreviewView: View {
     @EnvironmentObject private var storage: StorageService
     @EnvironmentObject private var detector: ColorDetectionService
-    @EnvironmentObject private var teamHunt: TeamHuntService
+    @EnvironmentObject private var hunt: HuntRunService
 
     let photo: CapturedPhoto
     let onRetake: () -> Void
@@ -76,15 +76,15 @@ struct CapturePreviewView: View {
 
     private var savedButtons: some View {
         VStack(spacing: 14) {
-            if teamHunt.isActive {
+            if hunt.isActive {
                 // TEAM HUNT は時間内に数をかせぐ活動なので、
                 // ここでは共有を出さずに「つぎ」へ進みやすくする。
                 // 共有は RESULT の写真から行う。
-                Label("Found \(teamHunt.foundCount)", systemImage: "checkmark.circle.fill")
+                Label("Found \(hunt.foundCount)", systemImage: "checkmark.circle.fill")
                     .font(Theme.display(28))
                     .foregroundColor(Theme.success)
 
-                Button(teamHunt.isTimeUp ? "けっかを みる" : "つぎを さがす") {
+                Button(hunt.isTimeUp ? "けっかを みる" : "つぎを さがす") {
                     onFinish()
                 }
                 .buttonStyle(PrimaryButtonStyle(fill: Theme.success))

@@ -3,26 +3,27 @@ import SwiftUI
 /// 画面の行き来をまとめる。大きなNavigation構造は作らず、
 /// 画面の切りかえと2つのシートだけにしている。
 ///
-/// SOLO HUNT と TEAM HUNT は、さがす画面（HuntView）と撮影確認
-/// （CapturePreviewView）を共有する。ちがうのは、
+/// SOLO HUNT と TEAM HUNT は、はじめる前の画面（SetupView）・さがす画面（HuntView）・
+/// けっか画面（ResultView）を共有する。ちがうのは、
 ///   - TEAM は色が固定（班の担当色）で、写真ごとに色を変えない
-///   - TEAM は5分の時計と Found count があり、終わると RESULT へ行く
-/// という2点だけ。
+///   - SOLO は難易度（いろの かず）をえらび、1枚ごとに色が変わる
+/// という2点だけ。時計と Found count は、どちらのモードにもある。
 struct RootView: View {
     enum Screen {
         case home
         case teamSelect
-        case teamReady
+        /// はじめる前（SOLO / TEAM 共通）。START を押すまで何も始まらない。
+        case setup
         /// SOLO / TEAM 共通のさがす画面
         case hunt
-        case preview
-        case teamResult
+        /// おわったあとのけっか（SOLO / TEAM 共通）
+        case result
     }
 
     @EnvironmentObject private var storage: StorageService
     @EnvironmentObject private var camera: CameraService
     @EnvironmentObject private var detector: ColorDetectionService
-    @EnvironmentObject private var teamHunt: TeamHuntService
+    @EnvironmentObject private var hunt: HuntRunService
 
     @Environment(\.scenePhase) private var scenePhase
 
@@ -30,6 +31,7 @@ struct RootView: View {
     @State private var showGallery = false
     @State private var showFolderSetup = false
     @State private var didBootstrap = false
+    @State private var setupMode: HuntMode = .solo
     @State private var pendingTeamNumber: Int?
     @State private var savedFlashImage: UIImage?
     @State private var saveFailed = false
@@ -61,7 +63,7 @@ struct RootView: View {
                 autoSave(photo)
             }
         }
-        .onValueChange(of: teamHunt.isTimeUp) { timeUp in
+        .onValueChange(of: hunt.isTimeUp) { timeUp in
             handleTimeUp(timeUp)
         }
         .onValueChange(of: scenePhase) { phase in
@@ -75,51 +77,65 @@ struct RootView: View {
     private var content: some View {
         switch screen {
         case .home:
-            HomeView(onStartSolo: startSoloHunt,
+            HomeView(onStartSolo: { openSetup(.solo, teamNumber: nil) },
                      onStartTeam: { screen = .teamSelect },
                      onOpenGallery: { showGallery = true },
                      onOpenFolderSetup: { showFolderSetup = true })
 
         case .teamSelect:
-            TeamSelectView(onSelect: selectTeam,
+            TeamSelectView(onSelect: { number in openSetup(.team, teamNumber: number) },
                            onBack: { screen = .home })
 
-        case .teamReady:
-            teamReadyContent
+        case .setup:
+            setupContent
 
-        case .hunt, .preview:
-            // 撮影確認のあいだも生かしておく。カメラを止めずにすみ、
-            // 「とりなおす」がすぐできる。
-            HuntView(onClose: closeSoloHunt,
+        case .hunt:
+            HuntView(onClose: leaveHunt,
                      onOpenGallery: { showGallery = true },
-                     onFinishTeamHunt: finishTeamHunt)
+                     onFinish: finishRun)
 
-        case .teamResult:
-            teamResultContent
+        case .result:
+            resultContent
         }
     }
 
     @ViewBuilder
-    private var teamReadyContent: some View {
-        if let number = pendingTeamNumber,
-           let profile = TeamHuntConfiguration.profile(for: number) {
-            TeamReadyView(teamNumber: number,
+    private var setupContent: some View {
+        if setupMode == .team {
+            if let number = pendingTeamNumber,
+               let profile = TeamHuntConfiguration.profile(for: number) {
+                SetupView(mode: .team,
+                          teamNumber: number,
                           profile: profile,
-                          onStart: { startTeamHunt(teamNumber: number, profile: profile) },
+                          onStart: { _, minutes in
+                              startRun(mode: .team,
+                                       teamNumber: number,
+                                       profile: profile,
+                                       level: nil,
+                                       minutes: minutes)
+                          },
                           onBack: { screen = .teamSelect })
+            } else {
+                // 対応表に無い番号だったときの逃げ道（ふつうは起きない）
+                Color.clear.onAppear { screen = .teamSelect }
+            }
         } else {
-            // 対応表に無い番号だったときの逃げ道（ふつうは起きない）
-            Color.clear.onAppear { screen = .teamSelect }
+            SetupView(mode: .solo,
+                      onStart: { level, minutes in
+                          startRun(mode: .solo,
+                                   teamNumber: nil,
+                                   profile: nil,
+                                   level: level,
+                                   minutes: minutes)
+                      },
+                      onBack: { screen = .home })
         }
     }
 
     @ViewBuilder
-    private var teamResultContent: some View {
-        if let session = teamHunt.session, let profile = session.profile {
-            TeamResultView(teamNumber: session.teamNumber,
-                           profile: profile,
-                           captureIDs: session.captureIDs,
-                           onHome: leaveTeamResult)
+    private var resultContent: some View {
+        if let current = hunt.run {
+            ResultView(run: current, onHome: leaveResult)
         } else {
             Color.clear.onAppear { screen = .home }
         }
@@ -141,64 +157,74 @@ struct RootView: View {
         // 保存先は先生がホーム下の小さな「ほぞんさき」から選ぶ。
     }
 
-    // MARK: - SOLO HUNT（これまでどおり）
+    // MARK: - はじめる前 → START
 
-    private func startSoloHunt() {
-        teamHunt.clear()
+    private func openSetup(_ mode: HuntMode, teamNumber: Int?) {
+        hunt.clear()
         camera.clearCapturedPhoto()
-        detector.pickNextColor()
+        detector.reset()
+        setupMode = mode
+        pendingTeamNumber = teamNumber
+        screen = .setup
+    }
+
+    /// START を押したとき。ここで初めてカメラと時計が動き出す。
+    private func startRun(mode: HuntMode,
+                          teamNumber: Int?,
+                          profile: ColorProfile?,
+                          level: HuntDifficulty?,
+                          minutes: Int) {
+        camera.clearCapturedPhoto()
+        hunt.start(HuntRun(mode: mode,
+                           teamNumber: teamNumber,
+                           profile: profile,
+                           level: level,
+                           limitSeconds: Double(minutes) * 60))
+
+        if mode == .team, let teamColor = profile {
+            // 班の担当色をそのまま既存の判定へ渡す。判定処理は SOLO と同じもの。
+            detector.activeProfile = teamColor
+            detector.reset()
+        } else {
+            detector.difficulty = level ?? .easy
+            detector.pickNextColor()
+        }
         screen = .hunt
     }
 
-    private func closeSoloHunt() {
+    // MARK: - おわる
+
+    /// FINISH（TEAM）・×（SOLO）・TIME'S UP。写真は消さない。
+    private func finishRun() {
         camera.stop()
         camera.clearCapturedPhoto()
         detector.reset()
-        teamHunt.clear()
+        hunt.finish()
+        screen = .result
+    }
+
+    private func leaveResult() {
+        hunt.clear()
         screen = .home
     }
 
-    // MARK: - TEAM HUNT
-
-    /// 班をえらんだら、確認画面を出さずにすぐ始める。
-    /// 色は 3・2・1 のあいだに大きく表示し、英語で読み上げて知らせる。
-    private func selectTeam(_ number: Int) {
-        pendingTeamNumber = number
-        guard let profile = TeamHuntConfiguration.profile(for: number) else { return }
-        startTeamHunt(teamNumber: number, profile: profile)
-    }
-
-    private func startTeamHunt(teamNumber: Int, profile: ColorProfile) {
-        camera.clearCapturedPhoto()
-        teamHunt.start(teamNumber: teamNumber, profile: profile)
-        // 班の担当色をそのまま既存の判定へ渡す。判定処理は SOLO と同じもの。
-        detector.activeProfile = profile
-        detector.reset()
-        screen = .hunt
-    }
-
-    /// FINISH または TIME'S UP。写真は消さない。
-    private func finishTeamHunt() {
+    /// カメラが使えないときだけ。けっかを出さずにホームへ戻る。
+    private func leaveHunt() {
         camera.stop()
         camera.clearCapturedPhoto()
         detector.reset()
-        teamHunt.finish()
-        screen = .teamResult
-    }
-
-    private func leaveTeamResult() {
-        teamHunt.clear()
+        hunt.clear()
         screen = .home
     }
 
-    /// 5分たったとき。撮影確認の途中なら中断しない（保存を壊さないため）。
+    /// 時間切れ。保存の途中なら中断しない（データを壊さないため）。
     private func handleTimeUp(_ timeUp: Bool) {
-        guard timeUp, teamHunt.isActive else { return }
+        guard timeUp, hunt.isActive else { return }
         guard screen == .hunt else { return }
         // TIME'S UP! を少し見せてから結果へ
         DispatchQueue.main.asyncAfter(deadline: .now() + 1.8) {
-            if screen == .hunt && teamHunt.isActive {
-                finishTeamHunt()
+            if screen == .hunt && hunt.isActive {
+                finishRun()
             }
         }
     }
@@ -207,16 +233,22 @@ struct RootView: View {
 
     private func autoSave(_ photo: CapturedPhoto) {
         detector.pause()
-        let mode: HuntMode = teamHunt.isActive ? .team : .solo
+        guard let current = hunt.run else {
+            camera.clearCapturedPhoto()
+            return
+        }
+
         if let capture = storage.save(photo: photo,
                                       profile: detector.activeProfile,
                                       hsv: detector.foundHSV ?? HSVColor.zero,
-                                      mode: mode,
-                                      teamNumber: teamHunt.teamNumber) {
+                                      mode: current.mode,
+                                      teamNumber: current.teamNumber,
+                                      sessionID: current.id,
+                                      sessionStartedAt: current.startedAt,
+                                      level: current.levelID,
+                                      limitSeconds: current.limitSeconds) {
             // Found count が増えるのは、ここ（保存できたとき）だけ
-            if teamHunt.isActive {
-                teamHunt.record(capture)
-            }
+            hunt.record(capture)
             saveFailed = false
             Feedback.tap()
         } else {
@@ -233,11 +265,11 @@ struct RootView: View {
 
     private func continueAfterSave() {
         guard screen == .hunt else { return }
-        if teamHunt.isActive {
-            if teamHunt.isTimeUp {
-                finishTeamHunt()
-                return
-            }
+        if hunt.isTimeUp {
+            finishRun()
+            return
+        }
+        if hunt.isTeam {
             detector.reset()         // 同じ色を、もう一度さがす
             detector.resume()
         } else {
@@ -264,41 +296,6 @@ struct RootView: View {
         }
         .accessibilityElement(children: .combine)
         .accessibilityLabel(saveFailed ? "ほぞん できませんでした" : "ほぞんしました")
-    }
-
-    // MARK: - 撮影確認からの戻り（いまは使っていない。検証用ハーネスが使う）
-
-    /// とりなおす: みつけた状態はそのままにして、カメラへもどる
-    private func retake() {
-        camera.clearCapturedPhoto()
-        if teamHunt.isActive && teamHunt.isTimeUp {
-            // もう時間がないので、撮り直さずに結果へ
-            finishTeamHunt()
-            return
-        }
-        detector.resume()
-        screen = .hunt
-    }
-
-    /// SOLO: 色を変えてあたらしくさがす
-    /// TEAM: 担当色は変えない。同じ色をさがし続ける。
-    private func finishCapture() {
-        camera.clearCapturedPhoto()
-
-        if teamHunt.isActive {
-            if teamHunt.isTimeUp {
-                finishTeamHunt()
-                return
-            }
-            detector.reset()
-            detector.resume()
-            screen = .hunt
-            return
-        }
-
-        detector.pickNextColor()
-        detector.resume()
-        screen = .hunt
     }
 
     private func handleScenePhase(_ phase: ScenePhase) {

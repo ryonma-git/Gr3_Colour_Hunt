@@ -1,7 +1,9 @@
 import SwiftUI
 
-/// MY COLORS。色ごとに、とった写真をならべる。
-/// いまは RED だけだが、ColorProfile.catalog に色を足せば節が増える。
+/// MY COLORS。1回の活動（セッション）ごとに、とった写真をならべる。
+///
+/// 色ごとに分けないのは、「この時間に何枚みつけた」という
+/// 体験の単位で見返せるようにするため（CaptureGroup を参照）。
 struct GalleryView: View {
     @EnvironmentObject private var storage: StorageService
 
@@ -16,14 +18,9 @@ struct GalleryView: View {
                     emptyState
                 } else {
                     LazyVStack(alignment: .leading, spacing: 30) {
-                        ForEach(ColorProfile.catalog) { profile in
-                            section(title: profile.displayName,
-                                    dotColor: profile.displayColor,
-                                    items: storage.captures(for: profile.id))
+                        ForEach(CaptureGroup.groups(from: storage.captures)) { group in
+                            section(group)
                         }
-                        section(title: "OTHER",
-                                dotColor: Theme.subtle,
-                                items: unknownCaptures)
                     }
                     .padding(20)
                 }
@@ -40,36 +37,33 @@ struct GalleryView: View {
         }
     }
 
-    /// カタログにない色の写真も、見えなくならないように出す
-    private var unknownCaptures: [ColorCapture] {
-        storage.captures.filter { ColorProfile.profile(id: $0.targetColor) == nil }
-    }
+    private func section(_ group: CaptureGroup) -> some View {
+        VStack(alignment: .leading, spacing: 14) {
+            HStack(alignment: .firstTextBaseline, spacing: 10) {
+                Text(group.title)
+                    .font(Theme.display(24))
+                    .foregroundColor(Theme.ink)
+                Text(group.subtitle)
+                    .font(Theme.label(15))
+                    .foregroundColor(Theme.subtle)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.7)
+                Spacer()
+                Text("\(group.items.count)まい")
+                    .font(Theme.label(20))
+                    .foregroundColor(Theme.ink)
+            }
+            .accessibilityElement(children: .combine)
+            .accessibilityLabel("\(group.title)、\(group.subtitle)、\(group.items.count)まい")
 
-    @ViewBuilder
-    private func section(title: String, dotColor: Color, items: [ColorCapture]) -> some View {
-        if !items.isEmpty {
-            VStack(alignment: .leading, spacing: 14) {
-                HStack(spacing: 10) {
-                    Circle()
-                        .fill(dotColor)
-                        .frame(width: 22, height: 22)
-                    Text(title)
-                        .font(Theme.display(34))
-                        .foregroundColor(Theme.ink)
-                    Text("\(items.count)")
-                        .font(Theme.label(20))
-                        .foregroundColor(Theme.subtle)
-                }
-
-                LazyVGrid(columns: columns, spacing: 12) {
-                    ForEach(items) { capture in
-                        NavigationLink {
-                            GalleryDetailView(capture: capture)
-                        } label: {
-                            cell(capture)
-                        }
-                        .buttonStyle(.plain)
+            LazyVGrid(columns: columns, spacing: 12) {
+                ForEach(group.items) { capture in
+                    NavigationLink {
+                        GalleryDetailView(capture: capture)
+                    } label: {
+                        cell(capture)
                     }
+                    .buttonStyle(.plain)
                 }
             }
         }
@@ -79,6 +73,16 @@ struct GalleryView: View {
         Color.clear
             .aspectRatio(1, contentMode: .fit)
             .overlay(ThumbnailImage(url: storage.imageURL(for: capture)))
+            .overlay(alignment: .bottom) {
+                Text(capture.displayName)
+                    .font(Theme.label(14))
+                    .foregroundColor(.white)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.6)
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 4)
+                    .background(Color.black.opacity(0.52))
+            }
             .clipShape(RoundedRectangle(cornerRadius: 14))
             .accessibilityLabel(capture.displayName + " " + capture.capturedAtText)
     }

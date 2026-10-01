@@ -17,7 +17,7 @@ struct ColorHuntApp: App {
         ColorDetectionService(profile: ColorProfile.randomHuntColor(excluding: nil))
     @StateObject private var speech = SpeechService()
     /// TEAM HUNT の進行（班・残り時間・みつけた数）。SOLO のときは空のまま。
-    @StateObject private var teamHunt = TeamHuntService()
+    @StateObject private var hunt = HuntRunService()
 
     var body: some Scene {
         WindowGroup {
@@ -26,7 +26,7 @@ struct ColorHuntApp: App {
                 .environmentObject(camera)
                 .environmentObject(detector)
                 .environmentObject(speech)
-                .environmentObject(teamHunt)
+                .environmentObject(hunt)
         }
     }
 }

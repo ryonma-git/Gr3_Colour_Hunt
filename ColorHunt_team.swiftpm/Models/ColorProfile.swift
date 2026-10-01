@@ -123,6 +123,8 @@ struct ColorProfile: Identifiable, Codable, Hashable {
     /// 白い背景に文字として置いても読める色。
     /// YELLOW のように明るい色は暗くして使う（色だけに頼らないための下地）。
     var readableColor: Color {
+        // WHITE は白い背景では見えないので、灰色にして出す
+        if id == "white" { return Color(red: 0.54, green: 0.54, blue: 0.56) }
         let hsv = RGBHSVConversion.hsv(r: tint.r, g: tint.g, b: tint.b)
         guard hsv.v > 0.72 && hsv.s > 0.20 else { return displayColor }
         let darker = RGBHSVConversion.rgb(HSVColor(h: hsv.h, s: min(1, hsv.s * 1.05), v: 0.60))
@@ -269,32 +271,105 @@ extension ColorProfile {
         tint: RGBTriple(r: 0.51, g: 0.36, b: 0.21)
     )
 
+    // ------------------------------------------------------------------
+    //  BLACK / WHITE / GRAY は「むずかしい」だけで出す色。
+    //  色み（色相）では決まらないので、色相は全部ゆるし、明るさと鮮やかさで分ける。
+    //
+    //  ※ カメラの自動露出は、画面いっぱいの黒も白も「中くらいの明るさ」に
+    //    補正してしまう。近づきすぎず、まわりも一緒に写すと正しく判定できる。
+    // ------------------------------------------------------------------
+
+    static let black = ColorProfile(
+        id: "black",
+        displayName: "BLACK",
+        speechText: "Black",
+        hueRanges: [HueRange(0, 360)],
+        saturationRange: ValueRange(0.0, 0.50),
+        brightnessRange: ValueRange(0.0, 0.30),   // 暗いこと が条件
+        difficulty: .advanced,
+        profileVersion: 1,
+        tint: RGBTriple(r: 0.17, g: 0.17, b: 0.19)
+    )
+
+    static let white = ColorProfile(
+        id: "white",
+        displayName: "WHITE",
+        speechText: "White",
+        hueRanges: [HueRange(0, 360)],
+        saturationRange: ValueRange(0.0, 0.16),   // 色みが無いこと
+        brightnessRange: ValueRange(0.74, 1.0),   // 明るいこと
+        difficulty: .advanced,
+        profileVersion: 1,
+        tint: RGBTriple(r: 1.0, g: 1.0, b: 1.0)
+    )
+
+    static let gray = ColorProfile(
+        id: "gray",
+        displayName: "GRAY",
+        speechText: "Gray",
+        hueRanges: [HueRange(0, 360)],
+        saturationRange: ValueRange(0.0, 0.20),   // 色みが無いこと
+        brightnessRange: ValueRange(0.26, 0.78),  // 黒と白の あいだ
+        difficulty: .advanced,
+        profileVersion: 1,
+        tint: RGBTriple(r: 0.56, g: 0.56, b: 0.58)
+    )
+
     /// アプリが知っている色すべて。Gallery の並び順にも使う。
     static let catalog: [ColorProfile] = [
-        .red, .orange, .yellow, .green, .blue, .purple, .pink, .brown
-    ]
-
-    /// ★ SOLO HUNT でランダム出題する色。ここを減らせば、その色だけが出る。
-    ///   例: 最初の授業は3色だけにする
-    ///       static let huntColors: [ColorProfile] = [.red, .blue, .yellow]
-    ///
-    ///   BROWN は入れていない。TEAM HUNT の8班目でだけ使う色で、
-    ///   ひとりで探すには難しく、肌の色とも重なりやすいため。
-    ///   SOLO でも出したいときは末尾に .brown を足す。
-    static let huntColors: [ColorProfile] = [
-        .red, .orange, .yellow, .green, .blue, .purple, .pink
+        .red, .orange, .yellow, .green, .blue, .purple, .pink, .brown,
+        .black, .white, .gray
     ]
 
     /// 次に出す色をランダムに選ぶ。直前と同じ色は選ばない。
-    static func randomHuntColor(excluding current: ColorProfile?) -> ColorProfile {
-        let pool = huntColors.filter { $0.id != current?.id }
+    static func randomHuntColor(excluding current: ColorProfile?,
+                                in difficulty: HuntDifficulty = .easy) -> ColorProfile {
+        let all = difficulty.colors
+        let pool = all.filter { $0.id != current?.id }
         if let next = pool.randomElement() { return next }
-        return huntColors.first ?? .red
+        return all.first ?? .red
     }
 
     /// 保存データの `targetColor` から色定義を引く。
     static func profile(id: String) -> ColorProfile? {
         catalog.first { $0.id == id }
+    }
+}
+
+// MARK: - 難易度（＝出題する色の数）
+
+/// ★ SOLO HUNT の難易度。変わるのは「出題する色の数」だけ。
+///
+///   かんたん   … 7色（いちばん基本の色）
+///   ふつう     … 8色（+ BROWN）
+///   むずかしい … 11色（+ BLACK・WHITE・GRAY）
+///
+/// 色を減らしたいときは colorIDs を書きかえる（例: ["red", "blue", "yellow"]）。
+/// TEAM HUNT の色は班ごとに固定なので、難易度の影響を受けない。
+struct HuntDifficulty: Identifiable, Hashable {
+    let id: String
+    /// 画面に出す名前（例: "かんたん"）
+    let label: String
+    /// 出題する ColorProfile.id
+    let colorIDs: [String]
+
+    var colors: [ColorProfile] { colorIDs.compactMap { ColorProfile.profile(id: $0) } }
+    var count: Int { colorIDs.count }
+    /// 「かんたん（7いろ）」
+    var labelWithCount: String { "\(label)（\(count)いろ）" }
+
+    private static let basic7 = ["red", "orange", "yellow", "green", "blue", "purple", "pink"]
+
+    static let easy = HuntDifficulty(id: "easy", label: "かんたん", colorIDs: basic7)
+    static let normal = HuntDifficulty(id: "normal", label: "ふつう", colorIDs: basic7 + ["brown"])
+    static let hard = HuntDifficulty(id: "hard", label: "むずかしい",
+                                     colorIDs: basic7 + ["brown", "black", "white", "gray"])
+
+    /// 開始前の画面に出す順
+    static let all: [HuntDifficulty] = [.easy, .normal, .hard]
+
+    static func byID(_ id: String?) -> HuntDifficulty {
+        all.first { $0.id == id } ?? .easy
     }
 }
 

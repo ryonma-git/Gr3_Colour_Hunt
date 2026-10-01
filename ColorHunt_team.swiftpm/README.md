@@ -10,10 +10,22 @@
 見つけたら写真を撮り、保存し、ロイロノートへ送って
 "I found BLUE. This is a blue pencil case!" のように発表します。
 
-## 出題される色
+## 出題される色（SOLO HUNT）
 
-**RED / ORANGE / YELLOW / GREEN / BLUE / PURPLE / PINK** の7色から、
-**毎回ランダム**に1色が出ます。
+はじめる前の画面で **いろの かず（難易度）** をえらびます。
+そのなかから **毎回ランダム**に1色が出ます。
+
+| 難易度 | 色数 | 出る色 |
+|---|---|---|
+| かんたん | 7色 | RED / ORANGE / YELLOW / GREEN / BLUE / PURPLE / PINK |
+| ふつう | 8色 | ＋ BROWN |
+| むずかしい | 11色 | ＋ BLACK・WHITE・GRAY |
+
+BLACK / WHITE / GRAY は色みではなく明るさで判定します。
+**カメラの自動露出は、画面いっぱいの黒も白も「中くらいの明るさ」に補正してしまう**ので、
+近づきすぎず、まわりも一緒に写すのがコツです（授業前に一言添えてください）。
+
+難易度の中身は `Models/ColorProfile.swift` の `HuntDifficulty` にあります。
 
 - START を押したとき … 新しい色
 - 「つぎを さがす」を押したとき … **また別の色**（直前と同じ色は出ません）
@@ -47,13 +59,16 @@ SOLO HUNT（ひとりでランダムな色をさがす）に加えて、**班ご
 
 ```
 TEAM HUNT → 班番号(1〜8)をえらぶ → TEAM 3 / GREEN を確認（色名タップで読み上げ）
- → START → 3・2・1 → 5:00 のカウントダウン開始
+             ＋ じかんをえらぶ
+ → START → 3・2・1 → えらんだ時間のカウントダウン開始
  → GREEN のものをさがす → FOUND → シャッター → この しゃしんに する（Found +1）
  → くりかえし → TIME'S UP! または FINISH → RESULT
 ```
 
-- **5分**（`TeamHuntConfiguration.duration`）。時間はUIからは変えられません
-- 途中でやめるときは画面左上の **FINISH**（確認ダイアログが出ます）
+- 時間は **はじめる前の画面** でえらびます（なし / 1 / 2 / 3 / 5分、または 1〜20分）。
+  えらんだ時間は端末におぼえます（`HuntSettings`）
+- 途中でやめるときは画面左上の **FINISH**（確認ダイアログが出ます）。
+  SOLO は同じ位置の **×** が「おわる」で、どちらもけっか画面へ進みます
 - **Found count は「この しゃしんに する」で正式保存された枚数だけ**増えます。
   FOUND しただけ、とりなおしただけでは増えません
 
@@ -120,14 +135,16 @@ ColorHunt_team.swiftpm/
 ├── README.md                   このファイル
 ├── ColorHuntApp.swift          アプリの入口。4つのサービスを注入する
 ├── Models/
-│   ├── ColorProfile.swift      ★ 色の定義と判定のチューニング（ここだけ直せばよい）
-│   ├── TeamHunt.swift          ★ 班と担当色の対応表・5分・セッション
+│   ├── ColorProfile.swift      ★ 色の定義・難易度・判定のチューニング（ここだけ直せばよい）
+│   ├── TeamHunt.swift          ★ 班と担当色の対応表
+│   ├── HuntRun.swift           ★ 1回の活動・時間の選択肢・前回の設定の記憶
+│   ├── CaptureGroup.swift      履歴を活動ごとにまとめる
 │   ├── ColorCapture.swift      library.json の中身
 │   └── HSVColor.swift          H/S/V の入れもの
 ├── Services/
 │   ├── CameraService.swift     カメラ起動・中央7x7の平均色・写真撮影
 │   ├── ColorDetectionService.swift  0.5秒つづけて一致したら FOUND
-│   ├── TeamHuntService.swift   班・残り時間・みつけた数
+│   ├── HuntRunService.swift    いまの活動・残り時間・みつけた数（SOLO / TEAM 共通）
 │   ├── SpeechService.swift     英語の読み上げ（オフラインでも動く）
 │   ├── StorageService.swift    フォルダ選択・JPG保存・library.json
 │   └── ShareService.swift      共有シート（ロイロノート）と発表用画像
@@ -135,12 +152,12 @@ ColorHunt_team.swiftpm/
 │   ├── RootView.swift          画面の行き来
 │   ├── HomeView.swift          SOLO HUNT / TEAM HUNT / MY COLORS
 │   ├── TeamSelectView.swift    班番号 1〜8
-│   ├── TeamReadyView.swift     TEAM n / 担当色 / START
-│   ├── TeamResultView.swift    大画面むけの結果画面
+│   ├── SetupView.swift         はじめる前（いろの かず・じかん・START）
+│   ├── ResultView.swift        けっか画面（SOLO / TEAM 共通・大画面むけ）
 │   ├── TeamPhotoViewerView.swift  結果の写真を大きく見る
 │   ├── HuntView.swift          カメラ・RED表示・ターゲット・シャッター
 │   ├── CapturePreviewView.swift  とりなおす / この しゃしんに する
-│   ├── GalleryView.swift       MY COLORS 一覧
+│   ├── GalleryView.swift       MY COLORS（1回の活動ごと）
 │   ├── GalleryDetailView.swift 大きく見る・共有・削除
 │   ├── FolderSetupView.swift   保存先フォルダの選択
 │   ├── CameraPreview.swift     カメラ映像の表示
@@ -313,6 +330,9 @@ static var style: Style = .presentationCard   // ← .photoOnly に変える
 | PURPLE | 245–325 | 0.18+ | **0.22+** | 青っぽく写る紫・ラベンダー・赤むらさきも通す。V は黒い服よけ |
 | PINK ① | 340–360, 0–8 | 0.15–**0.70** | 0.60+ | 赤と同じ色相を「うすさ」で分ける（ももいろ） |
 | PINK ② | 300–340 | 0.15+ | 0.60+ | 赤の無い色相なので、こいピンク（ペンなど）も通す |
+| BLACK | （色相は問わない） | 0–0.50 | 0–0.30 | 「暗いこと」で判定（むずかしい のみ） |
+| WHITE | （色相は問わない） | 0–0.16 | 0.74+ | 「色みが無く明るいこと」で判定（むずかしい のみ） |
+| GRAY | （色相は問わない） | 0–0.20 | 0.26–0.78 | 黒と白のあいだ（むずかしい のみ） |
 
 **ORANGE と PINK が「色相だけに頼らない設計」の実例です。**
 ORANGE は木の机（Hue 27付近）と色相が重なるので S で分けています。
@@ -412,28 +432,37 @@ Gallery は `catalog` の順に色ごとの節を作るので、追加すれば�
 
 ```json
 {
-  "schemaVersion" : 1,
+  "schemaVersion" : 3,
   "captures" : [
     {
       "id" : "9C1F5F2E-....",
       "mode" : "team",
       "teamNumber" : 3,
+      "sessionID" : "1B0A7C44-....",
+      "sessionStartedAt" : "2026-09-30T01:20:02.113Z",
+      "level" : null,
+      "limitSeconds" : 300,
       "targetColor" : "red",
       "displayName" : "RED",
       "imageFile" : "photos/9C1F5F2E-....jpg",
-      "capturedAt" : "2026-08-31T01:24:33Z",
+      "capturedAt" : "2026-08-31T01:24:33.482Z",
       "difficulty" : "basic",
-      "colorProfileVersion" : 1,
+      "colorProfileVersion" : 2,
       "sampledHSV" : { "h" : 4.8, "s" : 0.81, "v" : 0.73 }
     }
   ]
 }
 ```
 
-- `schemaVersion` は 2。`mode`（"solo" / "team"）と `teamNumber` は **optional** なので、
-  **schemaVersion 1 で書かれた古いファイルもそのまま読めます**（SOLO の写真は消えません）
+- `schemaVersion` は 3。あとから足した項目（`mode` / `teamNumber` / `sessionID` /
+  `sessionStartedAt` / `level` / `limitSeconds`）はすべて **optional** なので、
+  **古いファイルもそのまま読めます**（写真は消えません）
+- `sessionID` は「1回の活動」の識別子です。同じ活動で撮った写真には同じ値が入り、
+  MY COLORS はこれでまとめて並べます
+- `level` は SOLO の難易度（"easy" / "normal" / "hard"）、`limitSeconds` は制限時間（0 は「なし」）
 - `imageFile` は `library.json` から見た相対パスです
-- 日付は ISO8601
+- 日付は ISO8601。**ミリ秒まで**書きます（同じ秒に撮った写真の順番を保つため。
+  ミリ秒の無い古いファイルも読めます）
 - `sampledHSV` は「FOUND になった瞬間に測れていた色」です
 - 読み込みに失敗した `library.json` は消さずに `library.broken-<数字>.json` に退避します
   （写真は残るので、手で直すことができます）
@@ -473,6 +502,9 @@ Gallery は `catalog` の順に色ごとの節を作るので、追加すれば�
 ## 12. 既知の制約
 
 - **色判定は厳密な色彩測定ではありません。** 照明・カメラの自動露出・ホワイトバランスで値は動きます
+- **BLACK / WHITE は自動露出の影響を受けます。** 画面いっぱいに黒い物を写すと、カメラが明るく
+  補正して「灰色」に見えます。白も同じく暗く補正されます。近づきすぎず、まわりも一緒に写せば
+  正しく判定できます（原理上さけられないので、授業前の一言で補ってください）
 - 中央7x7ピクセルの平均だけを見ます。円の中全体の平均は使いません
 - **一度フォルダを選べば、次の起動から最初の画面は出ません。** 起動時にブックマークを解決して
   そのフォルダを開き直すためです。例外は下の4つで、このときだけ最初の画面がまた出ます。
@@ -522,11 +554,16 @@ xcodebuild -scheme ColorHunt -destination 'generic/platform=iOS' CODE_SIGNING_AL
 | 画面名 | 内容 |
 |---|---|
 | `home` | ホーム |
+| `soloready` | SOLO のはじめる前の画面（いろの かず・じかん） |
+| `ready` | TEAM のはじめる前の画面（担当色・じかん）→ START でさがす画面へ |
 | `setup` | 保存先をえらぶ画面 |
 | `hunt` | さがす画面（3・2・1 → カメラ無しの状態） |
-| `found` | RED をみつけた状態（合成した赤い色を流し込む） |
+| `found` | みつけた状態（合成した色を流し込む） |
 | `preview` | 撮影後の確認画面（合成写真。保存とロイロ共有まで試せる） |
-| `gallery` | MY COLORS |
+| `soloresult` | SOLO のけっか画面（色をまぜた合成写真） |
+| `result` | TEAM のけっか画面（`teamresult` も同じ） |
+| `teamphoto` | けっかの写真を大きく見る画面 |
+| `gallery` | MY COLORS（1回の活動ごと） |
 
 **色判定そのものは実機でしか確認できません。** harness.sh で見られるのは
 レイアウト・遷移・保存・共有シートまでです。

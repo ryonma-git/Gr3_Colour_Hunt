@@ -10,15 +10,23 @@
 //     SOLO … 次の色へ（色名を大きく出して読み上げる）
 //     TEAM … 同じ色のまま Found +1
 //   ロイロノートへの送信は MY COLORS / RESULT の写真から行う。
+//
+// 2026-09-30 追加:
+//   ・はじめる前の画面（難易度＝いろの かず / じかん）を SOLO・TEAM 両方に置いた
+//   ・SOLO にも じかん・Found の数・おわりの画面をつけた
+//   ・1回ぶんを「セッション」として記録し、MY COLORS はセッションごとに並べる
 
 import {
-  COLOR_PROFILES, TEAM_ASSIGNMENTS, TEAM_DURATION, TEAM_WARNING,
+  TEAM_ASSIGNMENTS, TIME_WARNING, DIFFICULTIES, DEFAULT_DIFFICULTY, difficultyById,
+  TIME_PRESETS_MIN, CUSTOM_TIME_RANGE, DEFAULT_LIMIT_MIN,
   profileById, randomHuntColor, teamProfile, readableColor
 } from './colors.js';
 import { Detector } from './detector.js';
 import { Camera } from './camera.js';
 import { speak, primeSpeech } from './speech.js';
-import { saveCapture, allCaptures, getCapture, deleteCapture, exportLibraryJSON } from './storage.js';
+import {
+  saveCapture, allCaptures, getCapture, deleteCapture, exportLibraryJSON, groupBySession
+} from './storage.js';
 import { shareCapture, openBlobInNewTab } from './share.js';
 
 const $ = (id) => document.getElementById(id);
@@ -27,18 +35,54 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 // ---------------------------------------------------------------- 状態
 let detector = null;
 let camera = null;
-let mode = 'solo';           // 'solo' | 'team'
-let team = null;             // { number, profile, captureIDs, timingStartedAt, timeUp }
-let teamTimer = null;
+// いま遊んでいる1回ぶん（セッション）。null なら遊んでいない。
+let run = null;   // { id, mode, teamNumber, profile, level, limitSeconds, startedAt, captureIDs, timingStartedAt, timeUp }
+let runTimer = null;
 let countdownToken = 0;
 let isCapturing = false;
 let objectURLs = [];
 let audioCtx = null;
 let detailRecord = null;
-let viewer = { list: [], index: 0, profile: null };
+let viewer = { list: [], index: 0, from: 'result' };
+// はじめる前の画面で選んでいる内容
+let setup = { mode: 'solo', teamNumber: null, level: DEFAULT_DIFFICULTY, limitMin: DEFAULT_LIMIT_MIN.solo };
+let customDraft = 10;        // 「そのほか」の分数
+
+const isTeamRun = () => !!run && run.mode === 'team';
+
+// ---------------------------------------------------------------- 設定の記憶
+// 端末ごとに、前回えらんだ難易度と時間をおぼえておく（先生が毎回えらばなくてよい）。
+const KEY = { level: 'colorhunt.level', soloLimit: 'colorhunt.limit.solo', teamLimit: 'colorhunt.limit.team' };
+
+function loadSetting(key, fallback) {
+  try {
+    const v = localStorage.getItem(key);
+    return v === null ? fallback : v;
+  } catch (e) { return fallback; }
+}
+
+function saveSetting(key, value) {
+  try { localStorage.setItem(key, String(value)); } catch (e) { /* 使えなくても続ける */ }
+}
+
+/** 0（なし）か 1〜20分だけを通す */
+function cleanLimitMin(value, fallback) {
+  const n = Math.round(Number(value));
+  if (!Number.isFinite(n) || n < 0 || n > CUSTOM_TIME_RANGE.max) return fallback;
+  return n;
+}
+
+function limitLabel(seconds) {
+  return !seconds ? 'じかん なし' : Math.round(seconds / 60) + 'ふん';
+}
+
+function levelLabel(levelId) {
+  const d = difficultyById(levelId);
+  return d.label + '（' + d.colorIds.length + 'いろ）';
+}
 
 // ---------------------------------------------------------------- 画面
-const SCREENS = ['home', 'team', 'hunt', 'result', 'viewer', 'gallery', 'detail'];
+const SCREENS = ['home', 'team', 'setup', 'hunt', 'result', 'viewer', 'gallery', 'detail'];
 let currentScreen = 'home';
 
 function showScreen(name) {
@@ -80,8 +124,8 @@ function playSuccessCue() {
 let lastPhase = 'searching';
 
 function canShoot() {
-  return detector.phase === 'found' && camera && camera.isRunning && !isCapturing &&
-    !(team && team.timeUp);
+  return !!run && detector.phase === 'found' && camera && camera.isRunning &&
+    !isCapturing && !run.timeUp;
 }
 
 function updateHuntUI() {
@@ -102,15 +146,15 @@ function updateHuntUI() {
   lastPhase = detector.phase;
 
   // SOLO / TEAM で上の表示を切りかえる
-  const isTeam = mode === 'team' && team;
-  $('btn-hunt-close').classList.toggle('hidden', !!isTeam);
-  $('btn-finish').classList.toggle('hidden', !isTeam);
+  const isTeam = isTeamRun();
+  $('btn-hunt-close').classList.toggle('hidden', isTeam);   // SOLO は × でおわる
+  $('btn-finish').classList.toggle('hidden', !isTeam);      // TEAM は FINISH
   $('team-badge').classList.toggle('hidden', !isTeam);
-  $('team-status').classList.toggle('hidden', !isTeam);
-  if (isTeam) {
-    $('team-badge').textContent = 'TEAM ' + team.number;
-    $('team-found').textContent = String(team.captureIDs.length);
-  }
+  if (isTeam) $('team-badge').textContent = 'TEAM ' + run.teamNumber;
+
+  // Found の数はどちらのモードでも出す。時計は「じかん なし」のときだけ隠す。
+  $('hunt-found').textContent = String(run ? run.captureIDs.length : 0);
+  $('hunt-timer').classList.toggle('hidden', !run || !run.limitSeconds);
 
   const panel = $('debug-panel');
   if (detector.isDebugEnabled) {
@@ -146,8 +190,8 @@ async function runCountdown() {
   if (token !== countdownToken) return;
   $('countdown').classList.add('hidden');
   detector.resume();
-  // TEAM は 3・2・1 が終わってから5分を数え始める
-  if (mode === 'team' && team && !team.timingStartedAt) startTeamTimer();
+  // 3・2・1 が終わってから、じかんを数え始める
+  if (run && run.limitSeconds && !run.timingStartedAt) startRunTimer();
   updateHuntUI();
 }
 
@@ -173,20 +217,143 @@ async function startCamera() {
   return ok;
 }
 
-// ---------------------------------------------------------------- SOLO
-async function startSolo() {
+// ---------------------------------------------------------------- はじめる前の画面
+function openSetup(mode, teamNumber) {
   primeAudio();
-  primeSpeech();                // iOS: タップの直後に解錠しておく
-  mode = 'solo';
-  team = null;
-  detector.pickNextColor();
+  primeSpeech();                // iOS: タップの直後に音声を解錠しておく
+  setup.mode = mode;
+  setup.teamNumber = teamNumber == null ? null : teamNumber;
+  if (mode === 'solo') {
+    setup.level = difficultyById(loadSetting(KEY.level, DEFAULT_DIFFICULTY)).id;
+    setup.limitMin = cleanLimitMin(loadSetting(KEY.soloLimit, DEFAULT_LIMIT_MIN.solo), DEFAULT_LIMIT_MIN.solo);
+  } else {
+    setup.limitMin = cleanLimitMin(loadSetting(KEY.teamLimit, DEFAULT_LIMIT_MIN.team), DEFAULT_LIMIT_MIN.team);
+  }
+  if (setup.limitMin > 0) customDraft = setup.limitMin;
+  renderSetup();
+  showScreen('setup');
+}
+
+function setLimitMin(minutes) {
+  setup.limitMin = minutes;
+  if (minutes > 0) customDraft = minutes;
+  saveSetting(setup.mode === 'team' ? KEY.teamLimit : KEY.soloLimit, minutes);
+  renderSetup();
+}
+
+/** 「そのほか」の −／＋。1〜20分のあいだで動かし、そのまま選んだことにする。 */
+function stepCustom(delta) {
+  const base = setup.limitMin > 0 ? setup.limitMin : customDraft;
+  const next = Math.min(CUSTOM_TIME_RANGE.max, Math.max(CUSTOM_TIME_RANGE.min, base + delta));
+  setLimitMin(next);
+}
+
+function setupSummary() {
+  const parts = [];
+  if (setup.mode === 'team') {
+    const p = teamProfile(setup.teamNumber);
+    parts.push('TEAM ' + setup.teamNumber + (p ? '：' + p.displayName : ''));
+  } else {
+    parts.push(levelLabel(setup.level));
+  }
+  parts.push(limitLabel(setup.limitMin * 60));
+  return parts.join('・');
+}
+
+function renderSetup() {
+  const isTeam = setup.mode === 'team';
+  $('setup-title').textContent = isTeam ? 'TEAM ' + setup.teamNumber : 'SOLO HUNT';
+
+  // TEAM は担当の色を確認する（タップで英語読み上げ）
+  $('setup-team-color').classList.toggle('hidden', !isTeam);
+  if (isTeam) {
+    const p = teamProfile(setup.teamNumber);
+    $('setup-swatch').style.background = p ? p.tint : '#dcdcdc';
+    $('setup-color-name').textContent = p ? p.displayName : '';
+    $('setup-color-name').style.color = p ? readableColor(p) : '';
+  }
+
+  // SOLO は いろの かず（難易度）をえらぶ
+  $('setup-level-block').classList.toggle('hidden', isTeam);
+  const levels = $('setup-levels');
+  levels.innerHTML = '';
+  DIFFICULTIES.forEach((d) => {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.className = 'chip' + (d.id === setup.level ? ' is-on' : '');
+    b.appendChild(document.createTextNode(d.label));
+    const small = document.createElement('small');
+    small.textContent = d.colorIds.length + 'いろ';
+    b.appendChild(small);
+    b.addEventListener('click', () => {
+      setup.level = d.id;
+      saveSetting(KEY.level, d.id);
+      renderSetup();
+    });
+    levels.appendChild(b);
+  });
+
+  // じかん
+  const times = $('setup-times');
+  times.innerHTML = '';
+  TIME_PRESETS_MIN.forEach((m) => {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.className = 'chip' + (m === setup.limitMin ? ' is-on' : '');
+    b.textContent = m === 0 ? 'なし' : m + 'ふん';
+    b.addEventListener('click', () => setLimitMin(m));
+    times.appendChild(b);
+  });
+  const isCustom = setup.limitMin > 0 && !TIME_PRESETS_MIN.includes(setup.limitMin);
+  const custom = $('btn-time-custom');
+  custom.textContent = (isCustom ? setup.limitMin : customDraft) + 'ふん';
+  custom.classList.toggle('is-on', isCustom);
+
+  $('setup-summary').textContent = setupSummary();
+}
+
+function newRunID() {
+  if (window.crypto && crypto.randomUUID) return crypto.randomUUID();
+  return 'run-' + Date.now() + '-' + Math.floor(Math.random() * 1e6);
+}
+
+// ---------------------------------------------------------------- START
+async function startRun() {
+  primeAudio();
+  primeSpeech();
+  const isTeam = setup.mode === 'team';
+  const profile = isTeam ? teamProfile(setup.teamNumber) : null;
+  if (isTeam && !profile) return;
+
+  run = {
+    id: newRunID(),
+    mode: setup.mode,
+    teamNumber: isTeam ? setup.teamNumber : null,
+    profile,
+    level: isTeam ? null : setup.level,
+    limitSeconds: setup.limitMin * 60,
+    startedAt: new Date().toISOString(),
+    captureIDs: [],
+    timingStartedAt: null,
+    timeUp: false
+  };
+
+  stopRunTimer();
+  setTimerText(run.limitSeconds);
+  detector.difficultyId = run.level;        // SOLO の出題色の範囲
+  if (isTeam) {
+    detector.activeProfile = profile;
+    detector.reset();
+  } else {
+    detector.pickNextColor();
+  }
   showScreen('hunt');
   updateHuntUI();
   const ok = await startCamera();
   if (ok) runCountdown();
 }
 
-// ---------------------------------------------------------------- TEAM
+// ---------------------------------------------------------------- TEAM をえらぶ
 function buildTeamGrid() {
   const grid = $('team-grid');
   grid.innerHTML = '';
@@ -196,66 +363,53 @@ function buildTeamGrid() {
     b.className = 'team-card';
     b.setAttribute('aria-label', 'チーム ' + a.teamNumber);
     b.innerHTML = '<small>TEAM</small><span>' + a.teamNumber + '</span>';
-    b.addEventListener('click', () => startTeam(a.teamNumber));
+    b.addEventListener('click', () => openSetup('team', a.teamNumber));
     grid.appendChild(b);
   });
 }
 
-async function startTeam(number) {
-  primeAudio();
-  primeSpeech();
-  const profile = teamProfile(number);
-  if (!profile) return;
-  mode = 'team';
-  team = { number, profile, captureIDs: [], timingStartedAt: null, timeUp: false };
-  stopTeamTimer();
-  setTimerText(TEAM_DURATION);
-  detector.activeProfile = profile;
-  detector.reset();
-  showScreen('hunt');
-  updateHuntUI();
-  const ok = await startCamera();
-  if (ok) runCountdown();   // 色名を大きく出して読み上げる（確認画面は出さない）
-}
-
 function setTimerText(sec) {
   const s = Math.max(0, Math.ceil(sec));
-  const el = $('team-timer');
+  const el = $('hunt-timer');
   el.textContent = Math.floor(s / 60) + ':' + String(s % 60).padStart(2, '0');
-  el.classList.toggle('is-warning', s <= TEAM_WARNING && s > 0);
+  el.classList.toggle('is-warning', s <= TIME_WARNING && s > 0);
 }
 
-function startTeamTimer() {
-  team.timingStartedAt = Date.now();
-  stopTeamTimer();
-  teamTimer = setInterval(() => {
-    if (!team) return stopTeamTimer();
-    const left = TEAM_DURATION - (Date.now() - team.timingStartedAt) / 1000;
+function startRunTimer() {
+  if (!run || !run.limitSeconds) return;
+  run.timingStartedAt = Date.now();
+  stopRunTimer();
+  runTimer = setInterval(() => {
+    if (!run || !run.limitSeconds) return stopRunTimer();
+    const left = run.limitSeconds - (Date.now() - run.timingStartedAt) / 1000;
     setTimerText(left);
-    if (left <= 0 && !team.timeUp) onTimeUp();
+    if (left <= 0 && !run.timeUp) onTimeUp();
   }, 250);
 }
 
-function stopTeamTimer() {
-  if (teamTimer) clearInterval(teamTimer);
-  teamTimer = null;
+function stopRunTimer() {
+  if (runTimer) clearInterval(runTimer);
+  runTimer = null;
 }
 
 async function onTimeUp() {
-  team.timeUp = true;
-  stopTeamTimer();
+  if (!run) return;
+  run.timeUp = true;
+  stopRunTimer();
+  cancelCountdown();          // 次の色の 3・2・1 の途中でも止める
+  detector.pause();
   updateHuntUI();
   // 保存の途中なら終わるまで待つ（データを壊さない）
   while (isCapturing) await sleep(100);
-  $('timesup-sub').textContent = 'Found ' + team.captureIDs.length;
+  $('timesup-sub').textContent = 'Found ' + run.captureIDs.length;
   $('timesup').classList.remove('hidden');
   await sleep(1800);
-  finishTeam();
+  finishRun();
 }
 
-function finishTeam() {
-  if (!team) return;
-  stopTeamTimer();
+function finishRun() {
+  if (!run) return;
+  stopRunTimer();
   cancelCountdown();
   camera.stop();
   $('timesup').classList.add('hidden');
@@ -274,9 +428,11 @@ async function shoot() {
     const blob = await camera.capturePhoto();
     const rec = await saveCapture({
       blob, profile, hsv,
-      mode, teamNumber: team ? team.number : null
+      mode: run.mode, teamNumber: run.teamNumber,
+      sessionID: run.id, sessionStartedAt: run.startedAt,
+      level: run.level, limitSeconds: run.limitSeconds
     });
-    if (team) team.captureIDs.push(rec.id);
+    run.captureIDs.push(rec.id);
     await flashSaved(blob);
   } catch (e) {
     showCameraMessage('しゃしんを ほぞん できませんでした。もういちど とってね');
@@ -286,8 +442,8 @@ async function shoot() {
   }
   isCapturing = false;
 
-  if (mode === 'team') {
-    if (team && team.timeUp) return;     // onTimeUp が結果へ進める
+  if (run.timeUp) return;                // onTimeUp が結果へ進める
+  if (run.mode === 'team') {
     detector.reset();                    // 同じ色を、もう一度さがす
     detector.resume();
     updateHuntUI();
@@ -310,12 +466,32 @@ async function flashSaved(blob) {
 
 function leaveHuntToHome() {
   cancelCountdown();
-  stopTeamTimer();
+  stopRunTimer();
   camera.stop();
   detector.reset();
-  team = null;
-  mode = 'solo';
+  run = null;
   showScreen('home');
+}
+
+// ---------------------------------------------------------------- 写真1枚のボタン
+/** withName が true なら色の名前を写真の下に出す（SOLO は色がまざるため） */
+function thumbButton(record, withName, onClick) {
+  const b = document.createElement('button');
+  b.type = 'button';
+  b.className = 'thumb';
+  b.setAttribute('aria-label', (record.displayName || '') + 'の しゃしん');
+  const img = document.createElement('img');
+  img.src = trackURL(URL.createObjectURL(record.blob));
+  img.alt = '';
+  b.appendChild(img);
+  if (withName) {
+    const cap = document.createElement('span');
+    cap.className = 'thumb-cap';
+    cap.textContent = record.displayName || '';
+    b.appendChild(cap);
+  }
+  b.addEventListener('click', onClick);
+  return b;
 }
 
 // ---------------------------------------------------------------- RESULT
@@ -323,13 +499,20 @@ async function showResult() {
   releaseURLs();
   const all = await allCaptures();
   const byId = new Map(all.map((c) => [c.id, c]));
-  const list = team.captureIDs.map((id) => byId.get(id)).filter(Boolean);
-  const p = team.profile;
+  const list = run.captureIDs.map((id) => byId.get(id)).filter(Boolean);
+  const isTeam = run.mode === 'team';
+  const p = run.profile;
 
-  $('result-team').textContent = 'TEAM ' + team.number;
-  $('result-color').textContent = p.displayName;
-  $('result-color').style.color = readableColor(p);
-  $('result-swatch').style.background = p.tint;
+  $('result-title').textContent = isTeam ? 'TEAM ' + run.teamNumber : 'SOLO HUNT';
+  $('result-color-row').classList.toggle('hidden', !isTeam || !p);
+  if (isTeam && p) {
+    $('result-color').textContent = p.displayName;
+    $('result-color').style.color = readableColor(p);
+    $('result-swatch').style.background = p.tint;
+  }
+  $('result-sub').textContent = isTeam
+    ? limitLabel(run.limitSeconds)
+    : levelLabel(run.level) + '・' + limitLabel(run.limitSeconds);
   $('result-count').textContent = String(list.length);
 
   const grid = $('result-grid');
@@ -341,25 +524,14 @@ async function showResult() {
     grid.appendChild(e);
   }
   list.forEach((c, i) => {
-    const b = document.createElement('button');
-    b.type = 'button';
-    b.className = 'thumb';
-    b.setAttribute('aria-label', (i + 1) + 'まいめの しゃしん');
-    const img = document.createElement('img');
-    img.src = trackURL(URL.createObjectURL(c.blob));
-    img.alt = '';
-    b.appendChild(img);
-    b.addEventListener('click', () => openViewer(list, i, p));
-    grid.appendChild(b);
+    grid.appendChild(thumbButton(c, !isTeam, () => openViewer(list, i, 'result')));
   });
   showScreen('result');
 }
 
 // ---------------------------------------------------------------- 写真を大きく（スワイプで前後）
-function openViewer(list, index, profile) {
-  viewer = { list, index, profile };
-  $('viewer-color').textContent = profile.displayName;
-  $('viewer-color').style.color = readableColor(profile);
+function openViewer(list, index, from) {
+  viewer = { list, index, from: from || 'result' };
   renderViewer();
   showScreen('viewer');
 }
@@ -368,6 +540,9 @@ function renderViewer() {
   const { list, index } = viewer;
   const c = list[index];
   if (!c) return;
+  const p = profileById(c.targetColor);
+  $('viewer-color').textContent = c.displayName || (p ? p.displayName : '');
+  $('viewer-color').style.color = p ? readableColor(p) : '';
   $('viewer-image').src = trackURL(URL.createObjectURL(c.blob));
   $('viewer-index').textContent = (index + 1) + ' / ' + list.length;
   $('btn-prev').disabled = index <= 0;
@@ -382,6 +557,30 @@ function moveViewer(step) {
 }
 
 // ---------------------------------------------------------------- MY COLORS
+/** 「9月30日 10:15」。セッション情報が無い古い写真は日付だけ。 */
+function sessionWhen(g) {
+  const d = new Date(g.startedAt);
+  const date = d.toLocaleDateString('ja-JP', { month: 'long', day: 'numeric' });
+  if (!g.sessionID) return date;
+  return date + ' ' + d.toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit' });
+}
+
+/** 「SOLO・かんたん・3ふん」「TEAM 4・YELLOW・5ふん」 */
+function sessionWhat(g) {
+  if (!g.sessionID) return 'これより まえの しゃしん';
+  const parts = [];
+  if (g.mode === 'team') {
+    parts.push('TEAM ' + (g.teamNumber == null ? '?' : g.teamNumber));
+    const p = teamProfile(g.teamNumber);
+    if (p) parts.push(p.displayName);
+  } else {
+    parts.push('SOLO');
+    if (g.level) parts.push(difficultyById(g.level).label);
+  }
+  if (g.limitSeconds != null) parts.push(limitLabel(g.limitSeconds));
+  return parts.join('・');
+}
+
 async function openGallery() {
   releaseURLs();
   const list = await allCaptures();
@@ -394,32 +593,30 @@ async function openGallery() {
     empty.innerHTML = '<p class="big">まだ しゃしんが ありません</p>';
     body.appendChild(empty);
   } else {
-    const known = COLOR_PROFILES.map((p) => p.id);
-    const sections = COLOR_PROFILES.map((p) => ({
-      title: p.displayName, tint: p.tint, items: list.filter((c) => c.targetColor === p.id)
-    }));
-    sections.push({ title: 'OTHER', tint: '#737376', items: list.filter((c) => !known.includes(c.targetColor)) });
-
-    sections.filter((s) => s.items.length > 0).forEach((s) => {
+    // 1回の活動（セッション）ごとに、何枚とれたかと写真を並べる
+    groupBySession(list).forEach((g) => {
       const sec = document.createElement('section');
-      sec.className = 'color-section';
-      sec.innerHTML =
-        '<div class="color-section-head"><span class="color-dot" style="background:' + s.tint +
-        '"></span><span class="color-name">' + s.title + '</span><span class="color-count">' +
-        s.items.length + '</span></div>';
+      sec.className = 'session';
+
+      const head = document.createElement('div');
+      head.className = 'session-head';
+      const when = document.createElement('span');
+      when.className = 'session-when';
+      when.textContent = sessionWhen(g);
+      const what = document.createElement('span');
+      what.className = 'session-what';
+      what.textContent = sessionWhat(g);
+      const count = document.createElement('span');
+      count.className = 'session-count';
+      count.textContent = g.items.length + 'まい';
+      head.appendChild(when);
+      head.appendChild(what);
+      head.appendChild(count);
+      sec.appendChild(head);
+
       const grid = document.createElement('div');
       grid.className = 'color-grid';
-      s.items.forEach((c) => {
-        const btn = document.createElement('button');
-        btn.className = 'thumb';
-        btn.type = 'button';
-        const img = document.createElement('img');
-        img.src = trackURL(URL.createObjectURL(c.blob));
-        img.alt = c.displayName;
-        btn.appendChild(img);
-        btn.addEventListener('click', () => openDetail(c.id));
-        grid.appendChild(btn);
-      });
+      g.items.forEach((c) => grid.appendChild(thumbButton(c, true, () => openDetail(c.id))));
       sec.appendChild(grid);
       body.appendChild(sec);
     });
@@ -450,12 +647,24 @@ async function doShare(record) {
 
 // ---------------------------------------------------------------- イベント
 function wireEvents() {
-  $('btn-solo').addEventListener('click', startSolo);
+  $('btn-solo').addEventListener('click', () => openSetup('solo'));
   $('btn-team').addEventListener('click', () => { buildTeamGrid(); showScreen('team'); });
   $('btn-team-back').addEventListener('click', () => showScreen('home'));
   $('btn-home-gallery').addEventListener('click', openGallery);
 
-  $('btn-hunt-close').addEventListener('click', leaveHuntToHome);
+  // はじめる前の画面
+  $('btn-setup-back').addEventListener('click', () => showScreen(setup.mode === 'team' ? 'team' : 'home'));
+  $('setup-team-color').addEventListener('click', () => {
+    const p = teamProfile(setup.teamNumber);
+    if (p) speak(p.speechText);
+  });
+  $('btn-time-minus').addEventListener('click', () => stepCustom(-1));
+  $('btn-time-plus').addEventListener('click', () => stepCustom(1));
+  $('btn-time-custom').addEventListener('click', () => setLimitMin(customDraft));
+  $('btn-start').addEventListener('click', startRun);
+
+  // SOLO は × でおわる（まちがって押しても消えないように確認する）
+  $('btn-hunt-close').addEventListener('click', () => $('finish-confirm').classList.remove('hidden'));
   $('target-word').addEventListener('click', () => speak(detector.activeProfile.speechText));
   $('btn-shutter').addEventListener('click', shoot);
   $('btn-retry-camera').addEventListener('click', async () => {
@@ -464,20 +673,19 @@ function wireEvents() {
   });
   $('btn-permission-home').addEventListener('click', leaveHuntToHome);
 
-  // FINISH は確認をはさむ（まちがって押しても消えないように）
+  // FINISH も確認をはさむ
   $('btn-finish').addEventListener('click', () => $('finish-confirm').classList.remove('hidden'));
   $('btn-finish-no').addEventListener('click', () => $('finish-confirm').classList.add('hidden'));
-  $('btn-finish-yes').addEventListener('click', finishTeam);
+  $('btn-finish-yes').addEventListener('click', finishRun);
 
   $('btn-result-home').addEventListener('click', () => {
     releaseURLs();
-    team = null;
-    mode = 'solo';
+    run = null;
     showScreen('home');
   });
 
   $('btn-viewer-back').addEventListener('click', () => {
-    if (team) { showScreen('result'); } else { openGallery(); }
+    if (viewer.from === 'gallery') { openGallery(); } else { showScreen('result'); }
   });
   $('btn-prev').addEventListener('click', () => moveViewer(-1));
   $('btn-next').addEventListener('click', () => moveViewer(1));
@@ -541,7 +749,7 @@ function wireEvents() {
 
 // ---------------------------------------------------------------- 起動
 function boot() {
-  detector = new Detector(randomHuntColor(null), updateHuntUI);
+  detector = new Detector(randomHuntColor(null, DEFAULT_DIFFICULTY), updateHuntUI);
   camera = new Camera($('video'), {
     onSample: (hsv) => detector.ingest(hsv),
     onError: (msg) => {
@@ -556,8 +764,15 @@ function boot() {
   // 検証用フック（?debug=1 のときだけ）。カメラが無くても流れを確かめられる。
   if (new URLSearchParams(location.search).has('debug')) {
     window.__colorHunt = {
-      get state() { return { mode, team, currentScreen, isCapturing }; },
-      detector, showScreen, runCountdown, startTeam, finishTeam, onTimeUp,
+      get state() { return { run, setup, currentScreen, isCapturing }; },
+      detector, showScreen, runCountdown, openSetup, startRun, finishRun, onTimeUp,
+      /** 開始前画面をとばして、その場で遊び始める（検証用） */
+      quickStart(mode, opts) {
+        openSetup(mode, opts && opts.teamNumber);
+        if (opts && opts.level) setup.level = opts.level;
+        if (opts && opts.limitMin != null) setup.limitMin = opts.limitMin;
+        return startRun();
+      },
       /** 出題中の色ちょうどの色を流して FOUND にする */
       demoFound() {
         const p = detector.activeProfile;

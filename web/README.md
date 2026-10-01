@@ -1,8 +1,13 @@
 # Color Hunt Web
 
 Swift Playgrounds 版と同じ活動を、**URL をひらくだけ**でできるようにした Web 版です。
-判定に使う数値は Swift 版とまったく同じです（2026-09-14 に、HSV を細かく区切った全点で
-両者の判定結果が一致することを確認しています）。
+判定に使う数値は Swift 版とまったく同じです（2026-09-30 に、11色すべてについて
+HSV を細かく区切った全点で両者の判定結果が一致することを確認しています）。
+
+SOLO / TEAM とも、**はじめる前の画面**で「いろの かず（SOLO のみ）」と「じかん」をえらび、
+START を押してから始まります。時間内は Found の数が出て、
+時間切れか「おわる」で **けっか画面**（何枚とれたか）になります。
+MY COLORS は色ごとではなく **1回の活動ごと**に並びます。
 
 ## なぜ Web 版か
 
@@ -107,11 +112,15 @@ Swift 版と同じ `library.json` 形式のメタデータを書き出せます�
 }
 ```
 
-出題する色を減らすときは同じファイルの:
+難易度ごとの出題色は同じファイルの `DIFFICULTIES` にあります。
+減らしたいときは colorIds を書きかえます:
 
 ```js
-export const HUNT_COLOR_IDS = ['red', 'blue', 'yellow'];
+{ id: 'easy', label: 'かんたん', colorIds: ['red', 'blue', 'yellow'] }
 ```
+
+時間の選択肢（なし / 1 / 2 / 3 / 5分）と、「そのほか」で選べる範囲（1〜20分）も
+同じファイルの `TIME_PRESETS_MIN` / `CUSTOM_TIME_RANGE` です。
 
 `TUNING` に、判定の秒数やサンプルサイズがまとまっています。
 
@@ -135,7 +144,9 @@ Safari のコンソールで `__colorHunt.demoFound()` と打つと、
 | `js/detector.js` | `Services/ColorDetectionService.swift` |
 | `js/camera.js` | `Services/CameraService.swift` |
 | `js/speech.js` | `Services/SpeechService.swift` |
-| `js/storage.js` | `Services/StorageService.swift` |
+| `js/storage.js` | `Services/StorageService.swift` ＋ `Models/CaptureGroup.swift` |
+| `colors.js` の `DIFFICULTIES` / `TIME_PRESETS_MIN` | `Models/ColorProfile.swift` の `HuntDifficulty` / `Models/HuntRun.swift` |
+| `app.js` の `run` / `setup` | `Services/HuntRunService.swift` ＋ `Views/SetupView.swift` |
 | `js/share.js` | `Services/ShareService.swift` |
 | `js/app.js` | `Views/RootView.swift` ほか |
 

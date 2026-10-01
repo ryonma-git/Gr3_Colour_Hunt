@@ -136,7 +136,11 @@ final class StorageService: ObservableObject {
               profile: ColorProfile,
               hsv: HSVColor,
               mode: HuntMode = .solo,
-              teamNumber: Int? = nil) -> ColorCapture? {
+              teamNumber: Int? = nil,
+              sessionID: String? = nil,
+              sessionStartedAt: Date? = nil,
+              level: String? = nil,
+              limitSeconds: Double? = nil) -> ColorCapture? {
         let identifier = UUID().uuidString
         let fileName = identifier + ".jpg"
         let relativePath = StorageService.photosDirectoryName + "/" + fileName
@@ -162,7 +166,11 @@ final class StorageService: ObservableObject {
                                    colorProfileVersion: profile.profileVersion,
                                    sampledHSV: hsv,
                                    mode: mode.rawValue,
-                                   teamNumber: teamNumber)
+                                   teamNumber: teamNumber,
+                                   sessionID: sessionID,
+                                   sessionStartedAt: sessionStartedAt,
+                                   level: level,
+                                   limitSeconds: limitSeconds)
 
         captures.insert(capture, at: 0)
         guard writeLibrary() else {

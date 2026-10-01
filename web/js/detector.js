@@ -12,6 +12,8 @@ const now = () => performance.now() / 1000;
 export class Detector {
   constructor(profile, onChange) {
     this.activeProfile = profile;
+    /** SOLO で次の色を選ぶ範囲（難易度の id）。null は「かんたん」。 */
+    this.difficultyId = null;
     this.onChange = onChange || (() => {});
     this.phase = 'searching';       // 'searching' | 'found'
     this.isMatchingNow = false;
@@ -26,7 +28,7 @@ export class Detector {
 
   /** 次にさがす色をランダムに決める。直前と同じ色は出ない。 */
   pickNextColor() {
-    this.activeProfile = randomHuntColor(this.activeProfile);
+    this.activeProfile = randomHuntColor(this.activeProfile, this.difficultyId);
     this.reset();
   }
 
